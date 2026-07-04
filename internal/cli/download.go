@@ -6,6 +6,8 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/underhax/audiobook-tools/internal/core"
@@ -39,10 +41,16 @@ func RunDownload(args []string, out io.Writer) error {
 		return errors.New("-url flag is required")
 	}
 
+	if *debug {
+		if err := os.Setenv("DEBUG", "1"); err != nil {
+			return fmt.Errorf("set debug env: %w", err)
+		}
+	}
+
 	d := downloader.New(*workers)
 	info, chapters, targetDir, err := d.DownloadBook(context.Background(), *url, *outDir, *loadCover, *createMetadata, *detiVersion)
 	if err != nil {
-		return fmt.Errorf("download failed: %w", err)
+		return handleDownloadError(err, targetDir, out)
 	}
 
 	if _, err := fmt.Fprintln(out, "Download completed successfully."); err != nil {
@@ -85,6 +93,41 @@ func executeBuilder(ctx context.Context, info *core.BookInfo, chapters []core.Ch
 	elapsed := time.Since(start)
 	if _, err := fmt.Fprintf(out, "Build completed successfully in %s!\nOutput file: %s\n", elapsed.Round(time.Second), outPath); err != nil {
 		return fmt.Errorf("write output: %w", err)
+	}
+	return nil
+}
+
+func handleDownloadError(err error, targetDir string, out io.Writer) error {
+	errMsg := err.Error()
+	if authErr, ok := errors.AsType[*core.AuthError](err); ok {
+		msg := fmt.Sprintf("Warning: Authentication required for %s.\n"+
+			"Please provide your token using one of the following methods:\n"+
+			"  1. Run: audiobook-tools auth %s <token>\n"+
+			"  2. Env: %s=<token> audiobook-tools download ...",
+			authErr.ProviderName, authErr.ProviderID, authErr.EnvVar)
+		if _, wErr := fmt.Fprintln(os.Stderr, msg); wErr != nil {
+			return fmt.Errorf("write output: %w", wErr)
+		}
+		return nil
+	}
+
+	isTokenErr := strings.Contains(err.Error(), "check your token or subscription") || strings.Contains(err.Error(), "API error")
+
+	if !isTokenErr {
+		return fmt.Errorf("download failed: %w", err)
+	}
+
+	if idx := strings.Index(errMsg, "API error:"); idx != -1 {
+		errMsg = errMsg[idx:]
+	}
+
+	if _, wErr := fmt.Fprintf(os.Stderr, "Warning: %s\n", errMsg); wErr != nil {
+		return fmt.Errorf("write output: %w", wErr)
+	}
+	if targetDir != "" {
+		if _, wErr := fmt.Fprintf(out, "Basic metadata and cover were saved to: %s\n", targetDir); wErr != nil {
+			return fmt.Errorf("write output: %w", wErr)
+		}
 	}
 	return nil
 }

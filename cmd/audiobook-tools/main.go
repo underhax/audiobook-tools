@@ -21,6 +21,8 @@ func main() {
 	switch command {
 	case "download":
 		err = cli.RunDownload(args, os.Stdout)
+	case "auth":
+		err = cli.RunAuth(args, os.Stdout)
 	case "build":
 		err = cli.RunBuild(args, os.Stdout)
 	case "help", "-h", "--help":
@@ -48,6 +50,7 @@ Usage:
   audiobook-tools <command> [arguments]
 
 The commands are:
+  auth        Save authentication token for a specific provider (e.g. books_yandex)
   download    Download an audiobook from a supported site
   build       Build an M4B file from an existing directory of MP3s
   version     Print the version number

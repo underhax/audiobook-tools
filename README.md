@@ -6,6 +6,7 @@ A command-line utility designed to download audiobooks from supported platforms 
 
 - [Книга в Ухе (knigavuhe.org)](https://knigavuhe.org)
 - [Дети Онлайн (deti-online.com)](https://deti-online.com)
+- [Яндекс Книги (books.yandex.ru)](https://books.yandex.ru)
 
 ## Why this project?
 
@@ -79,4 +80,24 @@ If you already have a directory containing audiobook `.mp3` files, you can assem
 **Example:**
 ```bash
 /path/to/audiobook-tools build -dir "~/Downloads/Author Name/Book Title" -clean
+```
+
+### 3. Authentication (for some platforms)
+
+Some platforms, such as Яндекс Книги, require authentication to access audiobook data. You can save your authentication token using the `auth` command. The token will be securely saved in your system's default configuration directory and automatically used during downloads.
+
+*For Яндекс Книги, you can find instructions on how to get an OAuth token in the [Yandex ID Documentation](https://yandex.ru/dev/id/doc/ru/tokens/debug-token).*
+
+```bash
+/path/to/audiobook-tools auth <provider> <token>
+```
+
+**Example:**
+```bash
+/path/to/audiobook-tools auth books_yandex my_secret_token_here
+```
+
+Alternatively, you can provide the token via an environment variable directly when downloading:
+```bash
+BOOKS_YANDEX_TOKEN=my_secret_token_here /path/to/audiobook-tools download -url "<AUDIOBOOK_URL>"
 ```

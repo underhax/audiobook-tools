@@ -22,7 +22,7 @@ func TestBuild(t *testing.T) {
 	}
 
 	fakeFFmpeg := filepath.Join(tempDir, "ffmpeg")
-	if err := os.WriteFile(fakeFFmpeg, []byte("#!/bin/sh\nexit 0\n"), 0o600); err != nil {
+	if err := os.WriteFile(fakeFFmpeg, []byte("#!/bin/sh\nfor last; do true; done\ntouch \"$last\"\nexit 0\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Chmod(fakeFFmpeg, os.FileMode(0o700)); err != nil {

@@ -19,6 +19,7 @@ func TestGenerateOPF(t *testing.T) {
 				Narrator:      "Jane Doe",
 				Description:   "A great book.",
 				PublishedYear: "2023",
+				Genres:        []string{"Sci-Fi", "Fiction & Fantasy"},
 			},
 			wantErr: false,
 		},

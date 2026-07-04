@@ -18,7 +18,8 @@ const opfTemplateStr = `<?xml version="1.0" encoding="utf-8"?>
     <dc:creator opf:role="nrt">{{.Narrator}}</dc:creator>{{end}}
     <dc:description>{{.Description}}</dc:description>
     <dc:language>ru</dc:language>{{if .PublishedYear}}
-    <dc:date>{{.PublishedYear}}</dc:date>{{end}}
+    <dc:date>{{.PublishedYear}}</dc:date>{{end}}{{range .Genres}}
+    <dc:subject>{{.}}</dc:subject>{{end}}
     <meta name="cover" content="cover.jpg" />
   </metadata>
   <manifest>
@@ -30,12 +31,18 @@ var opfTemplate = template.Must(template.New("opf").Parse(opfTemplateStr))
 
 // GenerateOPF creates an XML OPF metadata string for the given BookInfo.
 func GenerateOPF(info *BookInfo) (string, error) {
+	safeGenres := make([]string, 0, len(info.Genres))
+	for _, g := range info.Genres {
+		safeGenres = append(safeGenres, html.EscapeString(g))
+	}
+
 	safeInfo := BookInfo{
 		Title:         html.EscapeString(info.Title),
 		Author:        html.EscapeString(info.Author),
 		Narrator:      html.EscapeString(info.Narrator),
 		Description:   html.EscapeString(info.Description),
 		PublishedYear: html.EscapeString(info.PublishedYear),
+		Genres:        safeGenres,
 	}
 
 	var buf bytes.Buffer

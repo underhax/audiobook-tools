@@ -135,9 +135,7 @@ func (t *RetryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		}
 
 		if action == ActionAbort {
-			errClose := resp.Body.Close()
-			_ = errClose
-			return nil, fmt.Errorf("fatal HTTP status %d: %s", resp.StatusCode, resp.Status)
+			return resp, nil
 		}
 
 		if attempt == maxRetries {

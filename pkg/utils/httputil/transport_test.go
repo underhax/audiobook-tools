@@ -77,12 +77,16 @@ func TestRetryTransport_Abort(t *testing.T) {
 	}
 
 	resp, err := client.Do(req)
-	if resp != nil && resp.Body != nil {
+	if err != nil {
+		t.Fatalf("unexpected error for 404: %v", err)
+	}
+	defer func() {
 		errClose := resp.Body.Close()
 		_ = errClose
-	}
-	if err == nil {
-		t.Fatal("expected error for 404, got nil")
+	}()
+
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("expected 404, got %d", resp.StatusCode)
 	}
 
 	if calls != 1 {

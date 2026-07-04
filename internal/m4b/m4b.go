@@ -40,26 +40,44 @@ func Build(ctx context.Context, info *core.BookInfo, chapters []core.Chapter, ta
 		return "", fmt.Errorf("read target dir: %w", err)
 	}
 
-	var mp3Files []string
+	var sourceFiles []string
+	mp3Bases := make(map[string]bool)
 	for _, e := range entries {
 		if !e.IsDir() && strings.HasSuffix(strings.ToLower(e.Name()), ".mp3") {
-			mp3Files = append(mp3Files, e.Name())
+			base := e.Name()[:len(e.Name())-4]
+			mp3Bases[base] = true
 		}
 	}
 
-	totalFiles := len(mp3Files)
-	if totalFiles == 0 {
-		return "", errors.New("no mp3 files found in target directory")
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		lower := strings.ToLower(name)
+		if strings.HasSuffix(lower, ".mp3") {
+			sourceFiles = append(sourceFiles, name)
+		} else if strings.HasSuffix(lower, ".m4a") {
+			base := name[:len(name)-4]
+			if !mp3Bases[base] {
+				sourceFiles = append(sourceFiles, name)
+			}
+		}
 	}
 
-	err = convertAllToM4A(ctx, targetDir, mp3Files)
+	totalFiles := len(sourceFiles)
+	if totalFiles == 0 {
+		return "", errors.New("no source audio files (.mp3 or .m4a) found in target directory")
+	}
+
+	err = convertAllToM4A(ctx, targetDir, sourceFiles)
 	if err != nil {
 		return "", fmt.Errorf("parallel conversion: %w", err)
 	}
 
 	fmt.Println("All files converted successfully. Assembling M4B...")
 
-	err = generateConcatAndMetaFiles(ctx, targetDir, mp3Files, chapters)
+	err = generateConcatAndMetaFiles(ctx, targetDir, sourceFiles, chapters)
 	if err != nil {
 		return "", err
 	}
@@ -67,7 +85,7 @@ func Build(ctx context.Context, info *core.BookInfo, chapters []core.Chapter, ta
 	return runFFmpeg(ctx, info, targetDir, concatPath, metaPath, debug)
 }
 
-func generateConcatAndMetaFiles(ctx context.Context, targetDir string, mp3Files []string, chapters []core.Chapter) error {
+func generateConcatAndMetaFiles(ctx context.Context, targetDir string, sourceFiles []string, chapters []core.Chapter) error {
 	metaPath := filepath.Join(targetDir, "chapters.ffmeta")
 	concatPath := filepath.Join(targetDir, "ffconcat.txt")
 
@@ -78,9 +96,10 @@ func generateConcatAndMetaFiles(ctx context.Context, targetDir string, mp3Files 
 
 	var offsetMs int64
 
-	for i, file := range mp3Files {
-		mp3Path := filepath.Join(targetDir, file)
-		m4aName := strings.TrimSuffix(file, ".mp3") + ".m4a"
+	for i, file := range sourceFiles {
+		srcPath := filepath.Join(targetDir, file)
+		ext := filepath.Ext(file)
+		m4aName := strings.TrimSuffix(file, ext) + ".m4a"
 		m4aPath := filepath.Join(targetDir, m4aName)
 
 		durationStr, err := getDurationSeconds(ctx, m4aPath)
@@ -96,7 +115,10 @@ func generateConcatAndMetaFiles(ctx context.Context, targetDir string, mp3Files 
 		durMs := int64(durS * 1000)
 		endMs := offsetMs + durMs
 
-		id3Title := ExtractID3Text(mp3Path, "TIT2")
+		id3Title := ""
+		if strings.EqualFold(ext, ".mp3") {
+			id3Title = ExtractID3Text(srcPath, "TIT2")
+		}
 
 		chapterTitle := ""
 		if i < len(chapters) && chapters[i].Title != "" {
@@ -110,7 +132,7 @@ func generateConcatAndMetaFiles(ctx context.Context, targetDir string, mp3Files 
 		}
 
 		if chapterTitle == "" {
-			chapterTitle = strings.TrimSuffix(file, ".mp3")
+			chapterTitle = strings.TrimSuffix(file, ext)
 		}
 
 		titleEscaped := strings.ReplaceAll(chapterTitle, "=", "\\=")
@@ -207,8 +229,75 @@ func getDurationSeconds(ctx context.Context, filePath string) (string, error) {
 	return string(out), nil
 }
 
-func convertAllToM4A(ctx context.Context, targetDir string, mp3Files []string) error {
-	totalFiles := len(mp3Files)
+func getBitrate(ctx context.Context, filePath string) (string, error) {
+	cmd := exec.CommandContext(ctx, "ffprobe")
+	cmd.Args = append(cmd.Args, "-v", "error", "-show_entries", "format=bit_rate", "-of", "default=noprint_wrappers=1:nokey=1", filePath)
+	out, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("ffprobe bitrate failed for %s: %w", filePath, err)
+	}
+	return string(out), nil
+}
+
+func needsM4AConversion(ctx context.Context, ext, m4aPath, srcPath string) bool {
+	lowerExt := strings.ToLower(ext)
+	if lowerExt == ".mp3" {
+		if stat, err := os.Stat(m4aPath); err == nil && stat.Size() > 0 {
+			return false
+		}
+		return true
+	}
+
+	if lowerExt == ".m4a" {
+		bitrateStr, err := getBitrate(ctx, srcPath)
+		if err != nil {
+			return true
+		}
+		bitrate, err := strconv.Atoi(strings.TrimSpace(bitrateStr))
+		if err != nil {
+			return true
+		}
+		if bitrate > 0 && bitrate <= 66000 {
+			return false
+		}
+	}
+	return true
+}
+
+func processSingleAudioFile(ctx context.Context, targetDir, file string) error {
+	srcPath := filepath.Join(targetDir, file)
+	ext := filepath.Ext(file)
+	base := strings.TrimSuffix(file, ext)
+	m4aName := base + ".m4a"
+	m4aPath := filepath.Join(targetDir, m4aName)
+
+	if !needsM4AConversion(ctx, ext, m4aPath, srcPath) {
+		return nil
+	}
+
+	tmpM4aPath := m4aPath + ".tmp.m4a"
+	args := []string{
+		"-y", "-hide_banner", "-loglevel", "error",
+		"-i", srcPath,
+		"-vn",
+		"-c:a", "aac", "-b:a", "64k",
+		tmpM4aPath,
+	}
+	cmd := exec.CommandContext(ctx, "ffmpeg")
+	cmd.Args = append(cmd.Args, args...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to convert %s to m4a: %w\nOutput: %s", file, err, string(out))
+	}
+	if err := os.Rename(tmpM4aPath, m4aPath); err != nil {
+		return fmt.Errorf("failed to rename temp file for %s: %w", file, err)
+	}
+
+	return nil
+}
+
+func convertAllToM4A(ctx context.Context, targetDir string, sourceFiles []string) error {
+	totalFiles := len(sourceFiles)
 	var completed atomic.Int32
 	g, gCtx := errgroup.WithContext(ctx)
 	g.SetLimit(runtime.NumCPU())
@@ -233,33 +322,11 @@ func convertAllToM4A(ctx context.Context, targetDir string, mp3Files []string) e
 		}
 	}()
 
-	for _, file := range mp3Files {
+	for _, file := range sourceFiles {
 		g.Go(func() error {
-			mp3Path := filepath.Join(targetDir, file)
-			m4aName := strings.TrimSuffix(file, ".mp3") + ".m4a"
-			m4aPath := filepath.Join(targetDir, m4aName)
-
-			needsConversion := true
-			if stat, err := os.Stat(m4aPath); err == nil && stat.Size() > 0 {
-				needsConversion = false
+			if err := processSingleAudioFile(gCtx, targetDir, file); err != nil {
+				return err
 			}
-
-			if needsConversion {
-				args := []string{
-					"-y", "-hide_banner", "-loglevel", "error",
-					"-i", mp3Path,
-					"-vn",
-					"-c:a", "aac", "-b:a", "64k",
-					m4aPath,
-				}
-				cmd := exec.CommandContext(gCtx, "ffmpeg")
-				cmd.Args = append(cmd.Args, args...)
-				out, err := cmd.CombinedOutput()
-				if err != nil {
-					return fmt.Errorf("failed to convert %s to m4a: %w\nOutput: %s", file, err, string(out))
-				}
-			}
-
 			completed.Add(1)
 			return nil
 		})

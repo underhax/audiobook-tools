@@ -41,33 +41,40 @@ func New(workers int) *Downloader {
 
 // DownloadBook coordinates the complete retrieval pipeline: fetching metadata, resolving chapter URLs, and executing concurrent downloads.
 func (d *Downloader) DownloadBook(ctx context.Context, url, outputDir string, loadCover, createMetadata bool, version int) (*core.BookInfo, []core.Chapter, string, error) {
-	htmlContent, err := d.fetchHTML(ctx, url)
+	scraper, err := getScraper(url)
 	if err != nil {
 		return nil, nil, "", err
 	}
 
-	scraper, err := getScraper(url)
-	if err != nil {
-		return nil, nil, "", err
+	var htmlContent string
+	if !strings.Contains(url, "books.yandex.ru") {
+		htmlContent, err = d.fetchHTML(ctx, url)
+		if err != nil {
+			return nil, nil, "", err
+		}
 	}
 
 	if doScraper, ok := scraper.(*scrapers.DetiOnline); ok {
 		doScraper.Version = version
 	}
 
-	info, chapters, err := scraper.GetBookInfo(ctx, htmlContent, url)
-	if err != nil {
-		return nil, nil, "", fmt.Errorf("get book info: %w", err)
+	info, chapters, errInfo := scraper.GetBookInfo(ctx, htmlContent, url)
+
+	var targetDir string
+	if info.Title != "" {
+		log.Printf("Found book: %s by %s\n", info.Title, info.Author)
+		var errDir error
+		targetDir, errDir = d.prepareDirectory(&info, outputDir, version)
+		if errDir == nil {
+			d.processExtras(ctx, &info, targetDir, loadCover, createMetadata)
+		} else {
+			log.Printf("Warning: could not create directory for metadata: %v\n", errDir)
+		}
 	}
 
-	log.Printf("Found book: %s by %s\n", info.Title, info.Author)
-
-	targetDir, err := d.prepareDirectory(&info, outputDir, version)
-	if err != nil {
-		return nil, nil, "", err
+	if errInfo != nil {
+		return &info, nil, targetDir, fmt.Errorf("get book info: %w", errInfo)
 	}
-
-	d.processExtras(ctx, &info, targetDir, loadCover, createMetadata)
 
 	if err := d.downloadChapters(ctx, chapters, targetDir); err != nil {
 		return nil, nil, "", err
@@ -110,6 +117,8 @@ func getScraper(bookURL string) (scrapers.Scraper, error) {
 		return scrapers.NewKnigavuhe(), nil
 	case strings.Contains(bookURL, "deti-online.com"):
 		return scrapers.NewDetiOnline(), nil
+	case strings.Contains(bookURL, "books.yandex.ru"):
+		return scrapers.NewBooksYandex(), nil
 	default:
 		return nil, fmt.Errorf("unsupported website: %s", bookURL)
 	}
@@ -160,7 +169,11 @@ func (d *Downloader) downloadChapters(ctx context.Context, chapters []core.Chapt
 
 	for i, chapter := range chapters {
 		eg.Go(func() error {
-			fileName := fmt.Sprintf("%03d %s.mp3", i+1, utils.SanitizeFilename(chapter.Title))
+			ext := chapter.Extension
+			if ext == "" {
+				ext = ".mp3"
+			}
+			fileName := fmt.Sprintf("%03d %s%s", i+1, utils.SanitizeFilename(chapter.Title), ext)
 			filePath := filepath.Join(targetDir, fileName)
 			log.Printf("Downloading: %s\n", fileName)
 			if err := d.downloadFile(egCtx, chapter.URL, filePath); err != nil {

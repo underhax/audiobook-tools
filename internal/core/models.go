@@ -17,6 +17,19 @@ type BookInfo struct {
 
 // Chapter represents a single downloadable audio file.
 type Chapter struct {
-	URL   string `json:"url"`
-	Title string `json:"title"`
+	URL       string `json:"url"`
+	Title     string `json:"title"`
+	Extension string `json:"extension,omitempty"`
+}
+
+// AuthError represents an authentication error for a specific provider.
+type AuthError struct {
+	ProviderName string
+	ProviderID   string
+	EnvVar       string
+}
+
+// Error implements the error interface.
+func (e *AuthError) Error() string {
+	return "authentication required"
 }
