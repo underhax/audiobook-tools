@@ -40,7 +40,7 @@ func New(workers int) *Downloader {
 }
 
 // DownloadBook coordinates the complete retrieval pipeline: fetching metadata, resolving chapter URLs, and executing concurrent downloads.
-func (d *Downloader) DownloadBook(ctx context.Context, url, outputDir string, loadCover, createMetadata bool) (*core.BookInfo, []core.Chapter, string, error) {
+func (d *Downloader) DownloadBook(ctx context.Context, url, outputDir string, loadCover, createMetadata bool, version int) (*core.BookInfo, []core.Chapter, string, error) {
 	htmlContent, err := d.fetchHTML(ctx, url)
 	if err != nil {
 		return nil, nil, "", err
@@ -51,6 +51,10 @@ func (d *Downloader) DownloadBook(ctx context.Context, url, outputDir string, lo
 		return nil, nil, "", err
 	}
 
+	if doScraper, ok := scraper.(*scrapers.DetiOnline); ok {
+		doScraper.Version = version
+	}
+
 	info, chapters, err := scraper.GetBookInfo(ctx, htmlContent, url)
 	if err != nil {
 		return nil, nil, "", fmt.Errorf("get book info: %w", err)
@@ -58,7 +62,7 @@ func (d *Downloader) DownloadBook(ctx context.Context, url, outputDir string, lo
 
 	log.Printf("Found book: %s by %s\n", info.Title, info.Author)
 
-	targetDir, err := d.prepareDirectory(&info, outputDir)
+	targetDir, err := d.prepareDirectory(&info, outputDir, version)
 	if err != nil {
 		return nil, nil, "", err
 	}
@@ -100,16 +104,25 @@ func (d *Downloader) fetchHTML(ctx context.Context, url string) (string, error) 
 	return string(htmlContent), nil
 }
 
-func getScraper(url string) (scrapers.Scraper, error) {
-	if strings.Contains(url, "knigavuhe.org") {
+func getScraper(bookURL string) (scrapers.Scraper, error) {
+	switch {
+	case strings.Contains(bookURL, "knigavuhe.org"):
 		return scrapers.NewKnigavuhe(), nil
+	case strings.Contains(bookURL, "deti-online.com"):
+		return scrapers.NewDetiOnline(), nil
+	default:
+		return nil, fmt.Errorf("unsupported website: %s", bookURL)
 	}
-	return nil, fmt.Errorf("unsupported website: %s", url)
 }
 
-func (d *Downloader) prepareDirectory(info *core.BookInfo, outputDir string) (string, error) {
+func (d *Downloader) prepareDirectory(info *core.BookInfo, outputDir string, version int) (string, error) {
 	authorFolder := utils.SanitizeFilename(info.Author)
 	bookName := info.Title
+	if version > 1 && strings.Contains(info.URL, "deti-online.com") {
+		bookName = fmt.Sprintf("%s (Version %d)", bookName, version)
+	} else if strings.Contains(info.URL, "knigavuhe.org") && info.Narrator != "" {
+		bookName = fmt.Sprintf("%s (%s)", bookName, info.Narrator)
+	}
 	bookFolder := utils.SanitizeFilename(bookName)
 	targetDir := filepath.Join(outputDir, authorFolder, bookFolder)
 

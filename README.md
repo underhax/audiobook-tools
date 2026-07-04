@@ -1,6 +1,11 @@
 # AudioBook Tools
 
-A command-line utility designed to download audiobooks from supported platforms (like knigavuhe.org) and seamlessly assemble them into single, optimized `.m4b` files with embedded metadata, cover art, and chapter markers.
+A command-line utility designed to download audiobooks from supported platforms and seamlessly assemble them into single, optimized `.m4b` files with embedded metadata, cover art, and chapter markers.
+
+## Supported Platforms
+
+- [Книга в Ухе (knigavuhe.org)](https://knigavuhe.org)
+- [Дети Онлайн (deti-online.com)](https://deti-online.com)
 
 ## Why this project?
 
@@ -34,23 +39,28 @@ Official releases are available on the [GitHub Releases page](https://github.com
 Downloads the audiobook files to your local drive.
 
 ```bash
-/path/to/audiobook-tools download -url "https://knigavuhe.org/book/book-name/" [OPTIONS]
+/path/to/audiobook-tools download -url "<AUDIOBOOK_URL>" [OPTIONS]
 ```
 
 **Options:**
-- `-out <path>`: Output directory for the downloaded files (default: current directory).
-- `-workers <int>`: Number of concurrent download workers (default: 5).
-- `-m4b`: Automatically build the `.m4b` file after the download finishes.
-- `-clean`: Delete all intermediate `.mp3` and `.m4a` files after a successful `.m4b` build (works only if `-m4b` is set).
+- `-url <string>`: **(Required)** URL of the audiobook to download.
+- `-out <string>`: Output directory for the downloaded files (default ".").
+- `-workers <int>`: Number of concurrent download workers (default 5).
+- `-m4b`: Build M4B file after downloading.
+- `-clean`: Clean up downloaded MP3 files after building M4B (only if `-m4b` is set).
+- `-cover`: Download cover image (default true).
+- `-metadata`: Create OPF metadata file (default true).
+- `-deti-online-voice-version <int>`: Voice version to download (deti-online.com only) (default 1).
+- `-debug`: Show ffmpeg output and warnings.
 
 **Example (Download Only):**
 ```bash
-/path/to/audiobook-tools download -url "https://knigavuhe.org/book/book-name/" -out "~/Downloads"
+/path/to/audiobook-tools download -url "<AUDIOBOOK_URL>" -out "~/Downloads"
 ```
 
 **Example (Download, Build M4B, and Clean up MP3s):**
 ```bash
-/path/to/audiobook-tools download -url "https://knigavuhe.org/book/book-name/" -out "~/Downloads" -m4b -clean
+/path/to/audiobook-tools download -url "<AUDIOBOOK_URL>" -out "~/Downloads" -m4b -clean
 ```
 
 ### 2. Build an M4B File
@@ -62,8 +72,9 @@ If you already have a directory containing audiobook `.mp3` files, you can assem
 ```
 
 **Options:**
-- `-dir <path>`: **(Required)** Absolute or relative path to the directory containing the audiobook files.
-- `-clean`: Delete all intermediate `.mp3` and `.m4a` files after a successful `.m4b` build.
+- `-dir <string>`: **(Required)** Path to the directory containing the audiobook files.
+- `-clean`: Clean up downloaded MP3 files after building M4B.
+- `-debug`: Show ffmpeg output and warnings.
 
 **Example:**
 ```bash

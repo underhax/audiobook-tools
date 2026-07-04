@@ -50,7 +50,7 @@ func TestDownloader_DownloadBook(t *testing.T) {
 	outDir := t.TempDir()
 	bookURL := srv.URL + "/book?knigavuhe.org"
 
-	_, _, _, err := d.DownloadBook(context.Background(), bookURL, outDir, false, true)
+	_, _, _, err := d.DownloadBook(context.Background(), bookURL, outDir, false, true, 1)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -70,7 +70,7 @@ func TestDownloader_DownloadBook(t *testing.T) {
 func TestDownloader_Errors(t *testing.T) {
 	d := New(2)
 
-	_, _, _, err := d.DownloadBook(context.Background(), "http://%invalid", t.TempDir(), false, false)
+	_, _, _, err := d.DownloadBook(context.Background(), "http://%invalid", t.TempDir(), false, false, 1)
 	if err == nil {
 		t.Error("expected error for bad url")
 	}
@@ -81,7 +81,7 @@ func TestDownloader_Errors(t *testing.T) {
 	defer srv.Close()
 
 	d.Client = srv.Client()
-	_, _, _, err = d.DownloadBook(context.Background(), srv.URL+"/book", t.TempDir(), false, false)
+	_, _, _, err = d.DownloadBook(context.Background(), srv.URL+"/book", t.TempDir(), false, false, 1)
 	if err == nil {
 		t.Error("expected error for unsupported scraper")
 	}
@@ -91,7 +91,7 @@ func TestDownloader_Errors(t *testing.T) {
 	}))
 	defer srv404.Close()
 	d.Client = srv404.Client()
-	_, _, _, err = d.DownloadBook(context.Background(), srv404.URL+"/book?knigavuhe.org", t.TempDir(), false, false)
+	_, _, _, err = d.DownloadBook(context.Background(), srv404.URL+"/book?knigavuhe.org", t.TempDir(), false, false, 1)
 	if err == nil {
 		t.Error("expected error for 404")
 	}

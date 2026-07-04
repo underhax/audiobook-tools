@@ -26,6 +26,7 @@ func RunDownload(args []string, out io.Writer) error {
 	m4bFlag := fs.Bool("m4b", false, "Build M4B file after downloading")
 	cleanFiles := fs.Bool("clean", false, "Clean up downloaded MP3 files after building M4B (only if -m4b is set)")
 	debug := fs.Bool("debug", false, "Show ffmpeg output and warnings")
+	detiVersion := fs.Int("deti-online-voice-version", 1, "Voice version to download (deti-online.com only)")
 
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -39,7 +40,7 @@ func RunDownload(args []string, out io.Writer) error {
 	}
 
 	d := downloader.New(*workers)
-	info, chapters, targetDir, err := d.DownloadBook(context.Background(), *url, *outDir, *loadCover, *createMetadata)
+	info, chapters, targetDir, err := d.DownloadBook(context.Background(), *url, *outDir, *loadCover, *createMetadata, *detiVersion)
 	if err != nil {
 		return fmt.Errorf("download failed: %w", err)
 	}

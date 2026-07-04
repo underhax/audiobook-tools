@@ -25,7 +25,7 @@ func TestKnigavuheGetBookInfo(t *testing.T) {
 	`
 
 	scraper := NewKnigavuhe()
-	info, chapters, err := scraper.GetBookInfo(context.Background(), htmlContent, "http://example.com/book")
+	info, chapters, err := scraper.GetBookInfo(context.Background(), htmlContent, "https://example.com/book/test-book/")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
