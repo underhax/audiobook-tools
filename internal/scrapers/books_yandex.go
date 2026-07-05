@@ -189,15 +189,15 @@ func handleBooksYandexResponse(method, url string, req *http.Request, resp *http
 		return nil, fmt.Errorf("read body: %w", err)
 	}
 	if os.Getenv("DEBUG") != "" {
-		debugHeaders := req.Header.Clone()
-		if debugHeaders.Get("Auth-Token") != "" {
-			debugHeaders.Set("Auth-Token", "[HIDDEN]")
+		headerNames := make([]string, 0, len(req.Header))
+		for k := range req.Header {
+			safeKey := strings.ReplaceAll(k, "\n", "")
+			safeKey = strings.ReplaceAll(safeKey, "\r", "")
+			headerNames = append(headerNames, safeKey)
 		}
 		log.Printf("[DEBUG] %s URL: %q", method, url)
 		log.Printf("[DEBUG] %s Status: %d", method, resp.StatusCode)
-		safeHeaders := strings.ReplaceAll(fmt.Sprintf("%v", debugHeaders), "\n", "")
-		safeHeaders = strings.ReplaceAll(safeHeaders, "\r", "")
-		log.Printf("[DEBUG] %s Request Headers: %q", method, safeHeaders)
+		log.Printf("[DEBUG] %s Request Header Names: %q", method, strings.Join(headerNames, ","))
 		log.Printf("[DEBUG] %s Response: %q", method, string(bodyBytes))
 	}
 	if resp.StatusCode != http.StatusOK {
