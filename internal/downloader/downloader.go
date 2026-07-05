@@ -3,6 +3,7 @@ package downloader
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -114,6 +115,9 @@ func (d *Downloader) fetchHTML(ctx context.Context, url string) (string, error) 
 func getScraper(bookURL string) (scrapers.Scraper, error) {
 	switch {
 	case strings.Contains(bookURL, "knigavuhe.org"):
+		if strings.Contains(bookURL, "/paid/book/") {
+			return nil, errors.New("paid books from knigavuhe.org are not supported")
+		}
 		return scrapers.NewKnigavuhe(), nil
 	case strings.Contains(bookURL, "deti-online.com"):
 		return scrapers.NewDetiOnline(), nil

@@ -98,6 +98,7 @@ func TestBooksYandex_GetBookInfo(t *testing.T) {
 		if _, err := w.Write([]byte(`{
 			"audiobook": {
 				"title": "Test Book",
+				"can_be_listened": true,
 				"authors": [{"name": "Test Author"}],
 				"cover": {"large": "https://example.com/cover.jpg"}
 			}

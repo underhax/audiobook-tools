@@ -16,10 +16,13 @@ const opfTemplateStr = `<?xml version="1.0" encoding="utf-8"?>
     <dc:title>{{.Title}}</dc:title>
     <dc:creator opf:role="aut">{{.Author}}</dc:creator>{{if .Narrator}}
     <dc:creator opf:role="nrt">{{.Narrator}}</dc:creator>{{end}}
-    <dc:description>{{.Description}}</dc:description>
-    <dc:language>ru</dc:language>{{if .PublishedYear}}
+    <dc:description>{{.Description}}</dc:description>{{if .Publisher}}
+    <dc:publisher>{{.Publisher}}</dc:publisher>{{end}}{{if .Language}}
+    <dc:language>{{.Language}}</dc:language>{{else}}
+    <dc:language>ru</dc:language>{{end}}{{if .PublishedYear}}
     <dc:date>{{.PublishedYear}}</dc:date>{{end}}{{range .Genres}}
-    <dc:subject>{{.}}</dc:subject>{{end}}
+    <dc:subject>{{.}}</dc:subject>{{end}}{{if .Series}}
+    <meta name="calibre:series" content="{{.Series}}" />{{end}}
     <meta name="cover" content="cover.jpg" />
   </metadata>
   <manifest>
@@ -40,8 +43,11 @@ func GenerateOPF(info *BookInfo) (string, error) {
 		Title:         html.EscapeString(info.Title),
 		Author:        html.EscapeString(info.Author),
 		Narrator:      html.EscapeString(info.Narrator),
-		Description:   html.EscapeString(info.Description),
+		Description:   html.EscapeString(info.FormattedDescription()),
 		PublishedYear: html.EscapeString(info.PublishedYear),
+		Publisher:     html.EscapeString(info.Publisher),
+		Series:        html.EscapeString(info.Series),
+		Language:      html.EscapeString(info.Language),
 		Genres:        safeGenres,
 	}
 
@@ -65,12 +71,19 @@ func ParseOPF(path string) (*BookInfo, error) {
 		Value string `xml:",chardata"`
 	}
 
+	type Meta struct {
+		Name    string `xml:"name,attr"`
+		Content string `xml:"content,attr"`
+	}
+
 	type Metadata struct {
 		Title       string    `xml:"title"`
 		Description string    `xml:"description"`
 		Date        string    `xml:"date"`
 		Publisher   string    `xml:"publisher"`
+		Language    string    `xml:"language"`
 		Creators    []Creator `xml:"creator"`
+		Metas       []Meta    `xml:"meta"`
 	}
 
 	type Package struct {
@@ -87,6 +100,14 @@ func ParseOPF(path string) (*BookInfo, error) {
 		Title:         pkg.Metadata.Title,
 		Description:   pkg.Metadata.Description,
 		PublishedYear: pkg.Metadata.Date,
+		Publisher:     pkg.Metadata.Publisher,
+		Language:      pkg.Metadata.Language,
+	}
+
+	for _, m := range pkg.Metadata.Metas {
+		if m.Name == "calibre:series" {
+			info.Series = m.Content
+		}
 	}
 
 	for _, c := range pkg.Metadata.Creators {

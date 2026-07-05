@@ -6,13 +6,10 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"os"
 	"strings"
 	"time"
 
 	"github.com/underhax/audiobook-tools/internal/core"
-	"github.com/underhax/audiobook-tools/internal/downloader"
-	"github.com/underhax/audiobook-tools/internal/m4b"
 )
 
 // RunDownload parses flags and executes the downloader workflow.
@@ -42,12 +39,12 @@ func RunDownload(args []string, out io.Writer) error {
 	}
 
 	if *debug {
-		if err := os.Setenv("DEBUG", "1"); err != nil {
+		if err := osSetenv("DEBUG", "1"); err != nil {
 			return fmt.Errorf("set debug env: %w", err)
 		}
 	}
 
-	d := downloader.New(*workers)
+	d := newDownloader(*workers)
 	info, chapters, targetDir, err := d.DownloadBook(context.Background(), *url, *outDir, *loadCover, *createMetadata, *detiVersion)
 	if err != nil {
 		return handleDownloadError(err, targetDir, out)
@@ -67,16 +64,22 @@ func RunDownload(args []string, out io.Writer) error {
 }
 
 func executeBuilder(ctx context.Context, info *core.BookInfo, chapters []core.Chapter, targetDir string, cleanFiles, debug bool, out io.Writer) error {
+	absPath, absErr := filepathAbs(targetDir)
+	if absErr != nil {
+		return fmt.Errorf("get absolute path: %w", absErr)
+	}
+	targetDir = absPath
+
 	start := time.Now()
 
-	if err := m4b.CheckDependencies(); err != nil {
+	if err := m4bCheckDependencies(); err != nil {
 		return fmt.Errorf("missing dependencies: %w", err)
 	}
 	if _, err := fmt.Fprintln(out, "Building M4B..."); err != nil {
 		return fmt.Errorf("write output: %w", err)
 	}
 
-	outPath, err := m4b.Build(ctx, info, chapters, targetDir, debug)
+	outPath, err := m4bBuild(ctx, info, chapters, targetDir, debug)
 	if err != nil {
 		return fmt.Errorf("build m4b failed: %w", err)
 	}
@@ -85,7 +88,7 @@ func executeBuilder(ctx context.Context, info *core.BookInfo, chapters []core.Ch
 		if _, err := fmt.Fprintln(out, "Cleaning intermediate files..."); err != nil {
 			return fmt.Errorf("write output: %w", err)
 		}
-		if err := m4b.CleanIntermediateFiles(targetDir); err != nil {
+		if err := m4bCleanIntermediateFiles(targetDir); err != nil {
 			return fmt.Errorf("cleanup failed: %w", err)
 		}
 	}
@@ -105,23 +108,30 @@ func handleDownloadError(err error, targetDir string, out io.Writer) error {
 			"  1. Run: audiobook-tools auth %s <token>\n"+
 			"  2. Env: %s=<token> audiobook-tools download ...",
 			authErr.ProviderName, authErr.ProviderID, authErr.EnvVar)
-		if _, wErr := fmt.Fprintln(os.Stderr, msg); wErr != nil {
+		if _, wErr := fmt.Fprintln(stderrWriter, msg); wErr != nil {
 			return fmt.Errorf("write output: %w", wErr)
 		}
 		return nil
 	}
 
-	isTokenErr := strings.Contains(err.Error(), "check your token or subscription") || strings.Contains(err.Error(), "API error")
+	isWarningErr := strings.Contains(err.Error(), "check your token or subscription") ||
+		strings.Contains(err.Error(), "API error") ||
+		strings.Contains(err.Error(), "paid books from knigavuhe") ||
+		strings.Contains(err.Error(), "current subscription does not allow")
 
-	if !isTokenErr {
+	if !isWarningErr {
 		return fmt.Errorf("download failed: %w", err)
 	}
 
 	if idx := strings.Index(errMsg, "API error:"); idx != -1 {
 		errMsg = errMsg[idx:]
+	} else if idx := strings.Index(errMsg, "paid books"); idx != -1 {
+		errMsg = errMsg[idx:]
+	} else if idx := strings.Index(errMsg, "current subscription does not allow"); idx != -1 {
+		errMsg = errMsg[idx:]
 	}
 
-	if _, wErr := fmt.Fprintf(os.Stderr, "Warning: %s\n", errMsg); wErr != nil {
+	if _, wErr := fmt.Fprintf(stderrWriter, "Warning: %s\n", errMsg); wErr != nil {
 		return fmt.Errorf("write output: %w", wErr)
 	}
 	if targetDir != "" {

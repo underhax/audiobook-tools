@@ -33,13 +33,19 @@ func RunBuild(args []string, out io.Writer) error {
 		return errors.New("-dir flag is required")
 	}
 
-	if err := m4b.CheckDependencies(); err != nil {
+	absPath, absErr := filepathAbs(*dir)
+	if absErr != nil {
+		return fmt.Errorf("get absolute path: %w", absErr)
+	}
+	*dir = absPath
+
+	if err := m4bCheckDependencies(); err != nil {
 		return fmt.Errorf("missing dependencies: %w", err)
 	}
 
 	info := getMetadata(*dir)
 
-	chapters, err := m4b.ExtractChaptersFromDir(*dir)
+	chapters, err := m4bExtractChaptersFromDir(*dir)
 	if err != nil {
 		return fmt.Errorf("failed to extract chapters: %w", err)
 	}
@@ -55,7 +61,7 @@ func executeBuild(ctx context.Context, info *core.BookInfo, chapters []core.Chap
 		return fmt.Errorf("write output: %w", err)
 	}
 
-	outPath, err := m4b.Build(ctx, info, chapters, *dir, *debug)
+	outPath, err := m4bBuild(ctx, info, chapters, *dir, *debug)
 	if err != nil {
 		return fmt.Errorf("build m4b failed: %w", err)
 	}
@@ -64,7 +70,7 @@ func executeBuild(ctx context.Context, info *core.BookInfo, chapters []core.Chap
 		if _, err := fmt.Fprintln(out, "Cleaning intermediate files..."); err != nil {
 			return fmt.Errorf("write output: %w", err)
 		}
-		if err := m4b.CleanIntermediateFiles(*dir); err != nil {
+		if err := m4bCleanIntermediateFiles(*dir); err != nil {
 			return fmt.Errorf("cleanup failed: %w", err)
 		}
 	}
@@ -95,18 +101,21 @@ func getMetadata(dir string) *core.BookInfo {
 }
 
 func getMetadataFromID3(dir string) *core.BookInfo {
-	mp3s, err := filepath.Glob(filepath.Join(dir, "*.mp3"))
-	if err != nil || len(mp3s) == 0 {
-		return nil
+	files, err := filepath.Glob(filepath.Join(dir, "*.mp3"))
+	if err != nil || len(files) == 0 {
+		files, err = filepath.Glob(filepath.Join(dir, "*.m4a"))
+		if err != nil || len(files) == 0 {
+			return nil
+		}
 	}
 
-	firstMP3 := mp3s[0]
-	title := m4b.ExtractID3Text(firstMP3, "TALB")
+	firstFile := files[0]
+	title := m4b.ExtractID3Text(firstFile, "TALB")
 	if title == "" {
-		title = m4b.ExtractID3Text(firstMP3, "TIT2")
+		title = m4b.ExtractID3Text(firstFile, "TIT2")
 	}
-	author := m4b.ExtractID3Text(firstMP3, "TPE1")
-	narrator := m4b.ExtractID3Text(firstMP3, "TPE2")
+	author := m4b.ExtractID3Text(firstFile, "TPE1")
+	narrator := m4b.ExtractID3Text(firstFile, "TPE2")
 
 	if title != "" || author != "" {
 		if title == "" {
@@ -125,13 +134,8 @@ func getMetadataFromID3(dir string) *core.BookInfo {
 }
 
 func getMetadataFromPath(dir string) *core.BookInfo {
-	absDir, err := filepath.Abs(dir)
-	if err != nil {
-		return &core.BookInfo{Title: unknownBook, Author: unknownAuthor}
-	}
-
-	title := filepath.Base(absDir)
-	author := filepath.Base(filepath.Dir(absDir))
+	title := filepath.Base(dir)
+	author := filepath.Base(filepath.Dir(dir))
 	if author == "." || author == "/" {
 		author = unknownAuthor
 	}

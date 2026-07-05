@@ -95,6 +95,11 @@ func TestDownloader_Errors(t *testing.T) {
 	if err == nil {
 		t.Error("expected error for 404")
 	}
+
+	_, _, _, err = d.DownloadBook(context.Background(), "https://knigavuhe.org/paid/book/something", t.TempDir(), false, false, 1)
+	if err == nil || err.Error() != "paid books from knigavuhe.org are not supported" {
+		t.Errorf("expected paid book error, got: %v", err)
+	}
 }
 
 func TestDownloader_downloadFileError(t *testing.T) {

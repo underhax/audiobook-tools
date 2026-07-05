@@ -190,8 +190,20 @@ func runFFmpeg(ctx context.Context, info *core.BookInfo, targetDir, concatPath, 
 		"-metadata", "composer="+info.Narrator,
 	)
 
-	if info.Description != "" {
-		args = append(args, "-metadata", "comment="+info.Description)
+	if info.Publisher != "" {
+		args = append(args, "-metadata", "publisher="+info.Publisher)
+	}
+	if info.Language != "" {
+		args = append(args, "-metadata", "language="+info.Language)
+	} else {
+		args = append(args, "-metadata", "language=rus")
+	}
+	if info.Series != "" {
+		args = append(args, "-metadata", "grouping="+info.Series)
+	}
+
+	if info.Description != "" || len(info.Translators) > 0 || info.AgeRestriction != "" {
+		args = append(args, "-metadata", "comment="+info.FormattedDescription())
 	}
 	if info.PublishedYear != "" {
 		args = append(args, "-metadata", "date="+info.PublishedYear)

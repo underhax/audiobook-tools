@@ -129,7 +129,16 @@ type BooksYandexInfo struct {
 		Topics []struct {
 			Title string `json:"title"`
 		} `json:"topics"`
+		Publishers []struct {
+			Name string `json:"name"`
+		} `json:"publishers"`
+		Language       string `json:"language"`
+		AgeRestriction string `json:"age_restriction"`
+		Translators    []struct {
+			Name string `json:"name"`
+		} `json:"translators"`
 		PublicationDate int64 `json:"publication_date"`
+		CanBeListened   bool  `json:"can_be_listened"`
 	} `json:"audiobook"`
 }
 
@@ -234,6 +243,14 @@ func (b *BooksYandex) fetchInfo(ctx context.Context, uuid, token string) (core.B
 		return core.BookInfo{}, fmt.Errorf("decode json: %w", err)
 	}
 
+	if !data.Audiobook.CanBeListened {
+		return core.BookInfo{}, errors.New("current subscription does not allow listening to this book (check your token or subscription)")
+	}
+
+	return mapBooksYandexInfoToBookInfo(uuid, &data), nil
+}
+
+func mapBooksYandexInfoToBookInfo(uuid string, data *BooksYandexInfo) core.BookInfo {
 	author := "Unknown"
 	if len(data.Audiobook.Authors) > 0 {
 		author = data.Audiobook.Authors[0].Name
@@ -249,12 +266,12 @@ func (b *BooksYandex) fetchInfo(ctx context.Context, uuid, token string) (core.B
 		yearStr = strconv.Itoa(time.Unix(data.Audiobook.PublicationDate, 0).Year())
 	}
 
-	var authorsList []string
+	authorsList := make([]string, 0, len(data.Audiobook.Authors))
 	for _, a := range data.Audiobook.Authors {
 		authorsList = append(authorsList, a.Name)
 	}
 
-	var narratorsList []string
+	narratorsList := make([]string, 0, len(data.Audiobook.Narrators))
 	for _, n := range data.Audiobook.Narrators {
 		narratorsList = append(narratorsList, n.Name)
 	}
@@ -266,18 +283,46 @@ func (b *BooksYandex) fetchInfo(ctx context.Context, uuid, token string) (core.B
 		}
 	}
 
+	publishersList := make([]string, 0, len(data.Audiobook.Publishers))
+	for _, p := range data.Audiobook.Publishers {
+		publishersList = append(publishersList, p.Name)
+	}
+	publisher := ""
+	if len(publishersList) > 0 {
+		publisher = publishersList[0]
+	}
+
+	seriesList := make([]string, 0, len(data.Audiobook.SeriesList))
+	for _, s := range data.Audiobook.SeriesList {
+		seriesList = append(seriesList, s.Title)
+	}
+	series := ""
+	if len(seriesList) > 0 {
+		series = seriesList[0]
+	}
+
+	translatorsList := make([]string, 0, len(data.Audiobook.Translators))
+	for _, t := range data.Audiobook.Translators {
+		translatorsList = append(translatorsList, t.Name)
+	}
+
 	return core.BookInfo{
-		URL:           "https://books.yandex.ru/audiobooks/" + uuid,
-		Title:         data.Audiobook.Title,
-		Author:        author,
-		Authors:       authorsList,
-		Cover:         data.Audiobook.Cover.Large,
-		Description:   data.Audiobook.Annotation,
-		Narrator:      narrator,
-		Narrators:     narratorsList,
-		Genres:        genresList,
-		PublishedYear: yearStr,
-	}, nil
+		URL:            "https://books.yandex.ru/audiobooks/" + uuid,
+		Title:          data.Audiobook.Title,
+		Author:         author,
+		Authors:        authorsList,
+		Cover:          data.Audiobook.Cover.Large,
+		Description:    data.Audiobook.Annotation,
+		Narrator:       narrator,
+		Narrators:      narratorsList,
+		Genres:         genresList,
+		PublishedYear:  yearStr,
+		Publisher:      publisher,
+		Series:         series,
+		Language:       data.Audiobook.Language,
+		Translators:    translatorsList,
+		AgeRestriction: data.Audiobook.AgeRestriction,
+	}
 }
 
 func (b *BooksYandex) fetchPlaylists(ctx context.Context, uuid, token string) ([]core.Chapter, error) {

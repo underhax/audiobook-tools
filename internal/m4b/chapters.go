@@ -17,22 +17,31 @@ func ExtractChaptersFromDir(dir string) ([]core.Chapter, error) {
 		return nil, fmt.Errorf("read dir: %w", err)
 	}
 
-	var mp3Files []string
+	var audioFiles []string
 	for _, entry := range entries {
-		if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".mp3") {
-			mp3Files = append(mp3Files, entry.Name())
+		if entry.IsDir() {
+			continue
+		}
+		lower := strings.ToLower(entry.Name())
+		if strings.HasSuffix(lower, ".mp3") || strings.HasSuffix(lower, ".m4a") {
+			audioFiles = append(audioFiles, entry.Name())
 		}
 	}
 
-	sort.Strings(mp3Files)
+	sort.Strings(audioFiles)
 
 	var chapters []core.Chapter
-	for _, file := range mp3Files {
+	for _, file := range audioFiles {
 		filePath := dir + "/" + file
 		name := ExtractID3Text(filePath, "TIT2")
 
 		if name == "" {
-			name = strings.TrimSuffix(file, ".mp3")
+			name = file
+			if strings.HasSuffix(strings.ToLower(name), ".mp3") {
+				name = name[:len(name)-4]
+			} else if strings.HasSuffix(strings.ToLower(name), ".m4a") {
+				name = name[:len(name)-4]
+			}
 			parts := strings.SplitN(name, " ", 2)
 			if len(parts) == 2 && len(parts[0]) == 3 {
 				name = parts[1]
@@ -46,7 +55,7 @@ func ExtractChaptersFromDir(dir string) ([]core.Chapter, error) {
 	}
 
 	if len(chapters) == 0 {
-		return nil, errors.New("no mp3 files found in directory")
+		return nil, errors.New("no source audio files (.mp3 or .m4a) found in directory")
 	}
 
 	return chapters, nil

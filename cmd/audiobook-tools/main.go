@@ -3,48 +3,63 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
 
 	"github.com/underhax/audiobook-tools/internal/cli"
 )
 
+var osExit = os.Exit
+
 func main() {
-	if len(os.Args) < 2 {
-		printUsage()
-		os.Exit(1)
+	osExit(run(os.Args, os.Stdout, os.Stderr))
+}
+
+func run(args []string, stdout, stderr io.Writer) int {
+	if len(args) < 2 {
+		printUsage(stdout)
+		return 1
 	}
 
-	command := os.Args[1]
-	args := os.Args[2:]
+	command := args[1]
+	cmdArgs := args[2:]
 
 	var err error
 	switch command {
 	case "download":
-		err = cli.RunDownload(args, os.Stdout)
+		err = cli.RunDownload(cmdArgs, stdout)
 	case "auth":
-		err = cli.RunAuth(args, os.Stdout)
+		err = cli.RunAuth(cmdArgs, stdout)
 	case "build":
-		err = cli.RunBuild(args, os.Stdout)
+		err = cli.RunBuild(cmdArgs, stdout)
 	case "help", "-h", "--help":
-		printUsage()
-		return
+		printUsage(stdout)
+		return 0
 	case "version", "-v", "--version":
-		fmt.Printf("audiobook-tools version %s\n", cli.AppVersion)
-		return
+		if _, fmtErr := fmt.Fprintf(stdout, "audiobook-tools version %s\n", cli.AppVersion); fmtErr != nil {
+			return 1
+		}
+		return 0
 	default:
-		fmt.Fprintf(os.Stderr, "Unknown command: %s\n", command)
-		printUsage()
-		os.Exit(1)
+		if _, fmtErr := fmt.Fprintf(stderr, "Unknown command: %s\n", command); fmtErr != nil {
+			return 1
+		}
+		printUsage(stderr)
+		return 1
 	}
 
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
+		if _, printErr := fmt.Fprintf(stderr, "Error: %v\n", err); printErr != nil {
+			return 1
+		}
+		return 1
 	}
+
+	return 0
 }
 
-func printUsage() {
-	fmt.Println(`audiobook-tools - A suite of utilities for downloading and building audiobooks.
+func printUsage(out io.Writer) {
+	if _, err := fmt.Fprintln(out, `audiobook-tools - A suite of utilities for downloading and building audiobooks.
 
 Usage:
   audiobook-tools <command> [arguments]
@@ -55,5 +70,7 @@ The commands are:
   build       Build an M4B file from an existing directory of MP3s
   version     Print the version number
 
-Use "audiobook-tools <command> -h" for more information about a command.`)
+Use "audiobook-tools <command> -h" for more information about a command.`); err != nil {
+		return
+	}
 }
