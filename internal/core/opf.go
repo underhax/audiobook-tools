@@ -5,6 +5,7 @@ import (
 	"encoding/xml"
 	"fmt"
 	"html"
+	"io"
 	"os"
 	"path/filepath"
 	"text/template"
@@ -32,6 +33,15 @@ const opfTemplateStr = `<?xml version="1.0" encoding="utf-8"?>
 
 var opfTemplate = template.Must(template.New("opf").Parse(opfTemplateStr))
 
+func defaultExecuteTemplate(wr io.Writer, data any) error {
+	if err := opfTemplate.Execute(wr, data); err != nil {
+		return fmt.Errorf("execute: %w", err)
+	}
+	return nil
+}
+
+var executeTemplate = defaultExecuteTemplate
+
 // GenerateOPF creates an XML OPF metadata string for the given BookInfo.
 func GenerateOPF(info *BookInfo) (string, error) {
 	safeGenres := make([]string, 0, len(info.Genres))
@@ -52,7 +62,7 @@ func GenerateOPF(info *BookInfo) (string, error) {
 	}
 
 	var buf bytes.Buffer
-	if err := opfTemplate.Execute(&buf, safeInfo); err != nil {
+	if err := executeTemplate(&buf, safeInfo); err != nil {
 		return "", fmt.Errorf("execute template: %w", err)
 	}
 

@@ -114,6 +114,14 @@ func handleDownloadError(err error, targetDir string, out io.Writer) error {
 		return nil
 	}
 
+	if strings.HasPrefix(err.Error(), "prepare directory:") {
+		msg := fmt.Sprintf("Skipping download: the destination path '%s' is invalid or not writable (%v)", targetDir, err)
+		if _, wErr := fmt.Fprintln(stderrWriter, msg); wErr != nil {
+			return fmt.Errorf("write output: %w", wErr)
+		}
+		return nil
+	}
+
 	isWarningErr := strings.Contains(err.Error(), "check your token or subscription") ||
 		strings.Contains(err.Error(), "API error") ||
 		strings.Contains(err.Error(), "paid books from knigavuhe") ||

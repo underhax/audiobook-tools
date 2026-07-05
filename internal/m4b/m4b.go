@@ -146,10 +146,10 @@ func generateConcatAndMetaFiles(ctx context.Context, targetDir string, sourceFil
 	}
 
 	const perm = 0o644
-	if err := os.WriteFile(metaPath, []byte(metaBuilder.String()), perm); err != nil {
+	if err := writeFile(metaPath, []byte(metaBuilder.String()), perm); err != nil {
 		return fmt.Errorf("write ffmetadata: %w", err)
 	}
-	if err := os.WriteFile(concatPath, []byte(concatBuilder.String()), perm); err != nil {
+	if err := writeFile(concatPath, []byte(concatBuilder.String()), perm); err != nil {
 		return fmt.Errorf("write ffconcat: %w", err)
 	}
 
@@ -352,3 +352,13 @@ func convertAllToM4A(ctx context.Context, targetDir string, sourceFiles []string
 	}
 	return nil
 }
+
+func defaultWriteFile(name string, data []byte, perm os.FileMode) error {
+	err := os.WriteFile(name, data, perm)
+	if err != nil {
+		return fmt.Errorf("write file error: %w", err)
+	}
+	return nil
+}
+
+var writeFile = defaultWriteFile

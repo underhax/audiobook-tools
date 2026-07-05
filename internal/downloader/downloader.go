@@ -19,6 +19,18 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
+var generateOPF = core.GenerateOPF
+
+func defaultCreateFile(name string) (io.WriteCloser, error) {
+	out, err := os.Create(filepath.Clean(name))
+	if err != nil {
+		return nil, fmt.Errorf("os create: %w", err)
+	}
+	return out, nil
+}
+
+var createFile = defaultCreateFile
+
 // Downloader provides configuration for concurrency and network timeouts during the retrieval process.
 type Downloader struct {
 	Client  *http.Client
@@ -66,11 +78,10 @@ func (d *Downloader) DownloadBook(ctx context.Context, url, outputDir string, lo
 		log.Printf("Found book: %s by %s\n", info.Title, info.Author)
 		var errDir error
 		targetDir, errDir = d.prepareDirectory(&info, outputDir, version)
-		if errDir == nil {
-			d.processExtras(ctx, &info, targetDir, loadCover, createMetadata)
-		} else {
-			log.Printf("Warning: could not create directory for metadata: %v\n", errDir)
+		if errDir != nil {
+			return nil, nil, targetDir, fmt.Errorf("prepare directory: %w", errDir)
 		}
+		d.processExtras(ctx, &info, targetDir, loadCover, createMetadata)
 	}
 
 	if errInfo != nil {
@@ -78,7 +89,7 @@ func (d *Downloader) DownloadBook(ctx context.Context, url, outputDir string, lo
 	}
 
 	if err := d.downloadChapters(ctx, chapters, targetDir); err != nil {
-		return nil, nil, "", err
+		return nil, nil, targetDir, err
 	}
 
 	return &info, chapters, targetDir, nil
@@ -141,7 +152,7 @@ func (d *Downloader) prepareDirectory(info *core.BookInfo, outputDir string, ver
 
 	const dirPerm = 0o755
 	if err := os.MkdirAll(targetDir, dirPerm); err != nil {
-		return "", fmt.Errorf("create directory: %w", err)
+		return targetDir, fmt.Errorf("create directory: %w", err)
 	}
 	return targetDir, nil
 }
@@ -154,7 +165,7 @@ func (d *Downloader) processExtras(ctx context.Context, info *core.BookInfo, tar
 	}
 
 	if createMetadata {
-		xmlStr, err := core.GenerateOPF(info)
+		xmlStr, err := generateOPF(info)
 		if err != nil {
 			log.Printf("Failed to generate metadata: %v", err)
 		} else {
@@ -215,7 +226,7 @@ func (d *Downloader) downloadFile(ctx context.Context, url, path string) error {
 	}
 
 	cleanPath := filepath.Clean(path)
-	out, err := os.Create(cleanPath)
+	out, err := createFile(cleanPath)
 	if err != nil {
 		return fmt.Errorf("create file: %w", err)
 	}

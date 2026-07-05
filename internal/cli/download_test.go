@@ -245,6 +245,12 @@ func TestHandleDownloadError(t *testing.T) {
 			targetDir: "",
 			wantErr:   false,
 		},
+		{
+			name:      "prepare directory error",
+			err:       errors.New("prepare directory: permission denied"),
+			targetDir: "some_dir",
+			wantErr:   false,
+		},
 	}
 
 	for _, tt := range tests {
@@ -294,6 +300,13 @@ func TestHandleDownloadErrorBadWriter(t *testing.T) {
 			name:        "paid books stderr fail",
 			err:         errors.New("paid books from knigavuhe.org are not supported"),
 			targetDir:   "",
+			failOnCount: 0,
+			mockStderr:  true,
+		},
+		{
+			name:        "prepare directory stderr fail",
+			err:         errors.New("prepare directory: permission denied"),
+			targetDir:   "some_dir",
 			failOnCount: 0,
 			mockStderr:  true,
 		},

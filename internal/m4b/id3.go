@@ -136,13 +136,11 @@ func pickBestCyrillic(b []byte) string {
 	}
 
 	for _, enc := range encodings {
-		dec := enc.NewDecoder()
-		res, err := dec.Bytes(b)
-		if err != nil {
-			continue
+		var runes []rune
+		for _, v := range b {
+			runes = append(runes, enc.DecodeByte(v))
 		}
-
-		str := string(res)
+		str := string(runes)
 		score := scoreCyrillicString(str)
 
 		if score > bestScore {
