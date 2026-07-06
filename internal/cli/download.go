@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/underhax/audiobook-tools/internal/core"
+	"github.com/underhax/audiobook-tools/pkg/utils"
 )
 
 // RunDownload parses flags and executes the downloader workflow.
@@ -26,6 +27,7 @@ func RunDownload(args []string, out io.Writer) error {
 	cleanFiles := fs.Bool("clean", false, "Clean up downloaded MP3 files after building M4B (only if -m4b is set)")
 	debug := fs.Bool("debug", false, "Show ffmpeg output and warnings")
 	detiVersion := fs.Int("deti-online-voice-version", 1, "Voice version to download (deti-online.com only)")
+	retries := fs.Int("retry", 3, "Maximum number of network retries")
 
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -44,10 +46,27 @@ func RunDownload(args []string, out io.Writer) error {
 		}
 	}
 
-	d := newDownloader(*workers)
-	info, chapters, targetDir, err := d.DownloadBook(context.Background(), *url, *outDir, *loadCover, *createMetadata, *detiVersion)
-	if err != nil {
-		return handleDownloadError(err, targetDir, out)
+	d := newDownloader(*workers, *retries)
+
+	var (
+		info      *core.BookInfo
+		chapters  []core.Chapter
+		targetDir string
+		err       error
+	)
+
+	for {
+		info, chapters, targetDir, err = d.DownloadBook(context.Background(), *url, *outDir, *loadCover, *createMetadata, *detiVersion)
+		if err != nil {
+			if strings.Contains(err.Error(), "wait for chapters:") && len(unfinishedDownloads(targetDir)) > 0 {
+				if askRetry(osStdin, out) {
+					continue
+				}
+				return nil
+			}
+			return handleDownloadError(err, targetDir, out)
+		}
+		break
 	}
 
 	if _, err := fmt.Fprintln(out, "Download completed successfully."); err != nil {
@@ -74,6 +93,12 @@ func executeBuilder(ctx context.Context, info *core.BookInfo, chapters []core.Ch
 
 	if err := m4bCheckDependencies(); err != nil {
 		return fmt.Errorf("missing dependencies: %w", err)
+	}
+	if tmpFiles := unfinishedDownloads(targetDir); len(tmpFiles) > 0 {
+		if err := utils.PrintUnfinishedWarning(stderrWriter, tmpFiles, "Please finish downloading before building M4B."); err != nil {
+			return fmt.Errorf("print warning: %w", err)
+		}
+		return nil
 	}
 	if _, err := fmt.Fprintln(out, "Building M4B..."); err != nil {
 		return fmt.Errorf("write output: %w", err)

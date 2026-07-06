@@ -47,6 +47,7 @@ Downloads the audiobook files to your local drive.
 - `-url <string>`: **(Required)** URL of the audiobook to download.
 - `-out <string>`: Output directory for the downloaded files (default ".").
 - `-workers <int>`: Number of concurrent download workers (default 5).
+- `-retry <int>`: Maximum number of network retries for HTTP requests and file downloads (default 3).
 - `-m4b`: Build M4B file after downloading.
 - `-clean`: Clean up downloaded MP3 files after building M4B (only if `-m4b` is set).
 - `-cover`: Download cover image (default true).
@@ -54,9 +55,16 @@ Downloads the audiobook files to your local drive.
 - `-deti-online-voice-version <int>`: Voice version to download (deti-online.com only) (default 1).
 - `-debug`: Show ffmpeg output and warnings.
 
+If the configured retry count is exhausted and some chapter downloads remain unfinished, the tool will keep the partial `.tmp` files and ask whether you want to retry downloading the missing files.
+
 **Example (Download Only):**
 ```bash
 /path/to/audiobook-tools download -url "<AUDIOBOOK_URL>" -out "~/Downloads"
+```
+
+**Example (Download with Increased Retry Count):**
+```bash
+/path/to/audiobook-tools download -url "<AUDIOBOOK_URL>" -out "~/Downloads" -retry 5
 ```
 
 **Example (Download, Build M4B, and Clean up MP3s):**

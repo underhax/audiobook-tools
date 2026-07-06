@@ -181,7 +181,7 @@ func TestDetiOnline_getServerDomain_Errors(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			s := NewDetiOnline()
 			if c.client != nil {
-				s.Client = c.client
+				s.SetClient(c.client)
 			}
 			fallback := s.getServerDomain(context.Background(), c.url)
 			if fallback != "stat4.deti-online.com" {
@@ -193,14 +193,14 @@ func TestDetiOnline_getServerDomain_Errors(t *testing.T) {
 
 func TestDetiOnlineGetBookInfo_NoStatDomain(t *testing.T) {
 	s := NewDetiOnline()
-	s.Client = &http.Client{
+	s.SetClient(&http.Client{
 		Transport: &detiMockRoundTripper{
 			resp: &http.Response{
 				StatusCode: http.StatusOK,
-				Body:       io.NopCloser(strings.NewReader(`no domain here`)),
+				Body:       io.NopCloser(strings.NewReader(`player.js`)),
 			},
 		},
-	}
+	})
 	htmlContent := `<html><body><script src="/audio-player.js"></script></body></html>`
 	_, _, err := s.GetBookInfo(context.Background(), htmlContent, "https://example.com/test")
 	if err != nil {

@@ -143,6 +143,29 @@ func TestRunBuild(t *testing.T) {
 				filepathAbs = func(_ string) (string, error) { return "", errors.New("mock abs error") }
 			},
 		},
+		{
+			name:    "unfinished downloads error",
+			dir:     dirs.emptyDir,
+			wantErr: false,
+			errStr:  "",
+			setupMock: func() {
+				osReadDir = func(_ string) ([]os.DirEntry, error) {
+					return []os.DirEntry{mockDirEntry{name: "part1.tmp"}}, nil
+				}
+			},
+		},
+		{
+			name:    "unfinished downloads stderr write error",
+			dir:     dirs.emptyDir,
+			wantErr: true,
+			errStr:  "write output: mock write error",
+			setupMock: func() {
+				osReadDir = func(_ string) ([]os.DirEntry, error) {
+					return []os.DirEntry{mockDirEntry{name: "part2.tmp"}}, nil
+				}
+				stderrWriter = &buildBadWriter{failOnCount: 0}
+			},
+		},
 	}
 
 	for i := range tests {
@@ -153,6 +176,8 @@ func TestRunBuild(t *testing.T) {
 			origBuild := m4bBuild
 			origClean := m4bCleanIntermediateFiles
 			origAbs := filepathAbs
+			origReadDir := osReadDir
+			origStderr := stderrWriter
 
 			defer func() {
 				m4bCheckDependencies = origCheckDeps
@@ -160,6 +185,8 @@ func TestRunBuild(t *testing.T) {
 				m4bBuild = origBuild
 				m4bCleanIntermediateFiles = origClean
 				filepathAbs = origAbs
+				osReadDir = origReadDir
+				stderrWriter = origStderr
 			}()
 
 			m4bCheckDependencies = func() error { return nil }

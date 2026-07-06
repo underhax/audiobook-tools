@@ -12,9 +12,35 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/underhax/audiobook-tools/internal/core"
 )
+
+func testSleepFunc(ctx context.Context, _ time.Duration) error {
+	select {
+	case <-ctx.Done():
+		return fmt.Errorf("context done: %w", ctx.Err())
+	default:
+		return nil
+	}
+}
+
+func mockOpenFileError(_ string, _ int, _ os.FileMode) (io.WriteCloser, error) {
+	return nil, errors.New("mock open error")
+}
+
+func mockSleepFuncError(_ context.Context, _ time.Duration) error {
+	return errors.New("mock sleep error")
+}
+
+func mockRenameFileError(_, _ string) error {
+	return errors.New("mock rename error")
+}
+
+func init() {
+	sleepFunc = testSleepFunc
+}
 
 func TestDownloader_DownloadBook(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -50,7 +76,7 @@ func TestDownloader_DownloadBook(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	d := New(0)
+	d := New(0, 3)
 	d.Client = srv.Client()
 
 	outDir := t.TempDir()
@@ -74,7 +100,7 @@ func TestDownloader_DownloadBook(t *testing.T) {
 }
 
 func TestDownloader_Errors(t *testing.T) {
-	d := New(2)
+	d := New(2, 3)
 
 	_, _, _, err := d.DownloadBook(context.Background(), "http://%invalid", t.TempDir(), false, false, 1)
 	if err == nil {
@@ -144,7 +170,7 @@ func TestDownloader_Errors(t *testing.T) {
 }
 
 func TestDownloader_Errors_Scrapers(t *testing.T) {
-	d := New(2)
+	d := New(2, 3)
 
 	srvDeti := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -171,7 +197,7 @@ func TestDownloader_Errors_Scrapers(t *testing.T) {
 }
 
 func TestDownloader_downloadFileError(t *testing.T) {
-	d := New(1)
+	d := New(1, 3)
 	err := d.downloadFile(context.Background(), "http://%invalid", "out.mp3")
 	if err == nil {
 		t.Error("expected error")
@@ -204,7 +230,7 @@ func (m *mockTransport) RoundTrip(_ *http.Request) (*http.Response, error) {
 }
 
 func TestDownloader_fetchHTML_Errors(t *testing.T) {
-	d := New(1)
+	d := New(1, 3)
 
 	_, err := d.fetchHTML(context.Background(), "http://%invalid")
 	if err == nil || !strings.Contains(err.Error(), "create request:") {
@@ -279,7 +305,7 @@ func TestGetScraper(t *testing.T) {
 }
 
 func TestDownloader_prepareDirectory(t *testing.T) {
-	d := New(0)
+	d := New(0, 3)
 	outDir := t.TempDir()
 
 	tests := []struct {
@@ -336,7 +362,7 @@ func TestDownloader_prepareDirectory(t *testing.T) {
 }
 
 func TestDownloader_processExtras(t *testing.T) {
-	d := New(0)
+	d := New(0, 3)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/cover.jpg" {
@@ -419,7 +445,7 @@ func TestDownloader_processExtras_GenerateOPFError(t *testing.T) {
 	generateOPF = mockGenerateOPFError
 	defer func() { generateOPF = origGenerate }()
 
-	d := New(0)
+	d := New(0, 3)
 	outDir := t.TempDir()
 	info := &core.BookInfo{Title: "Test OPF Error"}
 
@@ -431,7 +457,7 @@ func TestDownloader_processExtras_GenerateOPFError(t *testing.T) {
 }
 
 func TestDownloader_downloadFile_AllErrors(t *testing.T) {
-	d := New(1)
+	d := New(1, 3)
 	outDir := t.TempDir()
 
 	tests := []struct {
@@ -462,12 +488,52 @@ func TestDownloader_downloadFile_AllErrors(t *testing.T) {
 						},
 					},
 				}
-				return filepath.Join(dir, "test2.mp3")
+				return filepath.Join(dir, "test_close.mp3")
 			},
 			wantErr: false,
 		},
 		{
-			name: "create file error",
+			name: "Status 206 partial resume",
+			setup: func(d *Downloader, dir string) string {
+				d.Client = &http.Client{
+					Transport: &mockTransport{
+						resp: &http.Response{
+							StatusCode: http.StatusPartialContent,
+							Body:       io.NopCloser(strings.NewReader(" appended data")),
+						},
+					},
+				}
+				path := filepath.Join(dir, "test_resume.mp3")
+				tmp := path + ".tmp"
+				if err := os.WriteFile(tmp, []byte("initial data"), 0o600); err != nil {
+					t.Fatalf("failed to write tmp file: %v", err)
+				}
+				return path
+			},
+			wantErr: false,
+		},
+		{
+			name: "Status 416 already downloaded",
+			setup: func(d *Downloader, dir string) string {
+				d.Client = &http.Client{
+					Transport: &mockTransport{
+						resp: &http.Response{
+							StatusCode: http.StatusRequestedRangeNotSatisfiable,
+							Body:       io.NopCloser(strings.NewReader("")),
+						},
+					},
+				}
+				path := filepath.Join(dir, "test_416.mp3")
+				tmp := path + ".tmp"
+				if err := os.WriteFile(tmp, []byte("complete data"), 0o600); err != nil {
+					t.Fatalf("failed to write tmp file: %v", err)
+				}
+				return path
+			},
+			wantErr: false,
+		},
+		{
+			name: "Status 200 restart",
 			setup: func(d *Downloader, dir string) string {
 				d.Client = &http.Client{
 					Transport: &mockTransport{
@@ -477,10 +543,11 @@ func TestDownloader_downloadFile_AllErrors(t *testing.T) {
 						},
 					},
 				}
-				return dir
+				openFile = mockOpenFileError
+				return filepath.Join(dir, "test_create.mp3")
 			},
 			wantErr:    true,
-			errMessage: "create file:",
+			errMessage: "open tmp file: mock open error",
 		},
 		{
 			name: "copy content error",
@@ -493,7 +560,7 @@ func TestDownloader_downloadFile_AllErrors(t *testing.T) {
 						},
 					},
 				}
-				return filepath.Join(dir, "test3.mp3")
+				return filepath.Join(dir, "test_copy.mp3")
 			},
 			wantErr:    true,
 			errMessage: "copy file content:",
@@ -502,6 +569,9 @@ func TestDownloader_downloadFile_AllErrors(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			origOpenFile := openFile
+			defer func() { openFile = origOpenFile }()
+
 			path := tt.setup(d, outDir)
 			err := d.downloadFile(context.Background(), "http://example.com/file", path)
 			if tt.wantErr {
@@ -527,7 +597,7 @@ func (m *mockWriteCloser) Close() error {
 	return m.closeErr
 }
 
-func mockCreateFileErrorClose(_ string) (io.WriteCloser, error) {
+func mockOpenFileErrorClose(_ string, _ int, _ os.FileMode) (io.WriteCloser, error) {
 	return &mockWriteCloser{
 		Writer:   io.Discard,
 		closeErr: errors.New("mock file close error"),
@@ -535,11 +605,11 @@ func mockCreateFileErrorClose(_ string) (io.WriteCloser, error) {
 }
 
 func TestDownloader_downloadFile_CloseError(t *testing.T) {
-	origCreateFile := createFile
-	createFile = mockCreateFileErrorClose
-	defer func() { createFile = origCreateFile }()
+	origOpenFile := openFile
+	openFile = mockOpenFileErrorClose
+	defer func() { openFile = origOpenFile }()
 
-	d := New(1)
+	d := New(1, 3)
 
 	d.Client = &http.Client{
 		Transport: &mockTransport{
@@ -551,7 +621,148 @@ func TestDownloader_downloadFile_CloseError(t *testing.T) {
 	}
 
 	err := d.downloadFile(context.Background(), "http://example.com/file", "dummy.mp3")
+	if err == nil {
+		t.Errorf("expected error from downloadFile on close error, got nil")
+	} else if !strings.Contains(err.Error(), "close tmp file") {
+		t.Errorf("expected close tmp file error, got %v", err)
+	}
+}
+
+func TestDefaultOpenFile_Error(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "missing", "file.mp3")
+
+	file, err := defaultOpenFile(path, os.O_CREATE|os.O_WRONLY, 0o600)
+	if err == nil {
+		if closeErr := file.Close(); closeErr != nil {
+			t.Fatalf("close unexpected file: %v", closeErr)
+		}
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "os openfile:") {
+		t.Fatalf("expected wrapped open error, got %v", err)
+	}
+}
+
+func TestDefaultRenameFile_Error(t *testing.T) {
+	err := defaultRenameFile(filepath.Join(t.TempDir(), "missing.mp3"), filepath.Join(t.TempDir(), "target.mp3"))
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "os rename:") {
+		t.Fatalf("expected wrapped rename error, got %v", err)
+	}
+}
+
+func TestDefaultSleepFunc(t *testing.T) {
+	t.Run("context done", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+
+		err := defaultSleepFunc(ctx, time.Second)
+		if err == nil {
+			t.Fatal("expected error")
+		}
+		if !strings.Contains(err.Error(), "context done:") {
+			t.Fatalf("expected wrapped context error, got %v", err)
+		}
+	})
+
+	t.Run("timer done", func(t *testing.T) {
+		err := defaultSleepFunc(context.Background(), 0)
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+	})
+}
+
+func TestDownloader_downloadChapters_PrintWarningError(t *testing.T) {
+	stderrFile, err := os.CreateTemp(t.TempDir(), "stderr-*.log")
 	if err != nil {
-		t.Errorf("expected no error from downloadFile since close error is only logged, got %v", err)
+		t.Fatalf("create temp stderr file: %v", err)
+	}
+	origStderr := os.Stderr
+	os.Stderr = stderrFile
+	defer func() { os.Stderr = origStderr }()
+	if closeErr := stderrFile.Close(); closeErr != nil {
+		t.Fatalf("close temp stderr file: %v", closeErr)
+	}
+
+	d := New(1, 0)
+	d.Client = &http.Client{
+		Transport: &mockTransport{err: errors.New("mock do error")},
+	}
+
+	chapters := []core.Chapter{{
+		Title:     "Chapter 1",
+		URL:       "http://example.com/chapter-1.mp3",
+		Extension: ".mp3",
+	}}
+
+	err = d.downloadChapters(context.Background(), chapters, t.TempDir())
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "print warning: write output:") {
+		t.Fatalf("expected print warning error, got %v", err)
+	}
+}
+
+func TestDownloader_downloadFile_ExistingFile(t *testing.T) {
+	d := New(1, 0)
+	d.Client = &http.Client{
+		Transport: &mockTransport{err: errors.New("unexpected do error")},
+	}
+
+	path := filepath.Join(t.TempDir(), "existing.mp3")
+	if err := os.WriteFile(path, []byte("done"), 0o600); err != nil {
+		t.Fatalf("write existing file: %v", err)
+	}
+
+	err := d.downloadFile(context.Background(), "http://example.com/existing.mp3", path)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+}
+
+func TestDownloader_downloadFile_SleepError(t *testing.T) {
+	origSleepFunc := sleepFunc
+	sleepFunc = mockSleepFuncError
+	defer func() { sleepFunc = origSleepFunc }()
+
+	d := New(1, 1)
+	d.Client = &http.Client{
+		Transport: &mockTransport{err: errors.New("mock do error")},
+	}
+
+	err := d.downloadFile(context.Background(), "http://example.com/retry.mp3", filepath.Join(t.TempDir(), "retry.mp3"))
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "mock sleep error") {
+		t.Fatalf("expected sleep error, got %v", err)
+	}
+}
+
+func TestDownloader_downloadFile_RenameError(t *testing.T) {
+	origRenameFile := renameFile
+	renameFile = mockRenameFileError
+	defer func() { renameFile = origRenameFile }()
+
+	d := New(1, 0)
+	d.Client = &http.Client{
+		Transport: &mockTransport{
+			resp: &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(strings.NewReader("data")),
+			},
+		},
+	}
+
+	err := d.downloadFile(context.Background(), "http://example.com/rename.mp3", filepath.Join(t.TempDir(), "rename.mp3"))
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "rename tmp file: mock rename error") {
+		t.Fatalf("expected rename error, got %v", err)
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"os"
 	"strings"
 	"testing"
 
@@ -12,18 +13,32 @@ import (
 )
 
 type mockBookDownloader struct {
-	err error
+	err     error
+	errFunc func() error
 }
 
 func (m *mockBookDownloader) DownloadBook(_ context.Context, _, _ string, _, _ bool, _ int) (*core.BookInfo, []core.Chapter, string, error) {
+	if m.errFunc != nil {
+		return nil, nil, "test_dir_m", m.errFunc()
+	}
 	if m.err != nil {
 		return nil, nil, "", m.err
 	}
 	return &core.BookInfo{}, []core.Chapter{}, "test_dir_m", nil
 }
 
+type mockDirEntry struct {
+	name  string
+	isDir bool
+}
+
+func (m mockDirEntry) Name() string               { return m.name }
+func (m mockDirEntry) IsDir() bool                { return m.isDir }
+func (m mockDirEntry) Type() os.FileMode          { return 0 }
+func (m mockDirEntry) Info() (os.FileInfo, error) { return nil, os.ErrNotExist }
+
 func TestDefaultDownloader(t *testing.T) {
-	d := defaultDownloader(1)
+	d := defaultDownloader(1, 3)
 	if d == nil {
 		t.Error("expected non-nil downloader")
 	}
@@ -61,7 +76,7 @@ func TestRunDownload(t *testing.T) {
 			wantErr: true,
 			errStr:  "download failed: mock dl error",
 			setupMock: func() {
-				newDownloader = func(_ int) bookDownloader {
+				newDownloader = func(_, _ int) bookDownloader {
 					return &mockBookDownloader{err: errors.New("mock dl error")}
 				}
 			},
@@ -72,7 +87,7 @@ func TestRunDownload(t *testing.T) {
 			debugFlag: true,
 			wantErr:   false,
 			setupMock: func() {
-				newDownloader = func(_ int) bookDownloader {
+				newDownloader = func(_, _ int) bookDownloader {
 					return &mockBookDownloader{err: nil}
 				}
 				osSetenv = func(_, _ string) error { return nil }
@@ -85,7 +100,7 @@ func TestRunDownload(t *testing.T) {
 			wantErr:   true,
 			errStr:    "set debug env: mock setenv error",
 			setupMock: func() {
-				newDownloader = func(_ int) bookDownloader {
+				newDownloader = func(_, _ int) bookDownloader {
 					return &mockBookDownloader{err: nil}
 				}
 				osSetenv = func(_, _ string) error { return errors.New("mock setenv error") }
@@ -96,7 +111,7 @@ func TestRunDownload(t *testing.T) {
 			urlVal:  "http://deti-online.com/book_2",
 			wantErr: false,
 			setupMock: func() {
-				newDownloader = func(_ int) bookDownloader {
+				newDownloader = func(_, _ int) bookDownloader {
 					return &mockBookDownloader{err: nil}
 				}
 			},
@@ -107,7 +122,7 @@ func TestRunDownload(t *testing.T) {
 			extraArgs: []string{"-m4b"},
 			wantErr:   false,
 			setupMock: func() {
-				newDownloader = func(_ int) bookDownloader {
+				newDownloader = func(_, _ int) bookDownloader {
 					return &mockBookDownloader{err: nil}
 				}
 				m4bCheckDependencies = func() error { return nil }
@@ -124,10 +139,45 @@ func TestRunDownload(t *testing.T) {
 			wantErr:   true,
 			errStr:    "builder execution failed: missing dependencies: mock deps error",
 			setupMock: func() {
-				newDownloader = func(_ int) bookDownloader {
+				newDownloader = func(_, _ int) bookDownloader {
 					return &mockBookDownloader{err: nil}
 				}
 				m4bCheckDependencies = func() error { return errors.New("mock deps error") }
+			},
+		},
+		{
+			name:    "download retry yes",
+			urlVal:  "http://deti-online.com/retry_yes",
+			wantErr: false,
+			setupMock: func() {
+				callCount := 0
+				newDownloader = func(_, _ int) bookDownloader {
+					return &mockBookDownloader{errFunc: func() error {
+						callCount++
+						if callCount == 1 {
+							return errors.New("wait for chapters: mock err")
+						}
+						return nil
+					}}
+				}
+				osReadDir = func(_ string) ([]os.DirEntry, error) {
+					return []os.DirEntry{mockDirEntry{name: "file.tmp"}}, nil
+				}
+				osStdin = strings.NewReader("yes\n")
+			},
+		},
+		{
+			name:    "download retry no",
+			urlVal:  "http://deti-online.com/retry_no",
+			wantErr: false,
+			setupMock: func() {
+				newDownloader = func(_, _ int) bookDownloader {
+					return &mockBookDownloader{err: errors.New("wait for chapters: mock err")}
+				}
+				osReadDir = func(_ string) ([]os.DirEntry, error) {
+					return []os.DirEntry{mockDirEntry{name: "file.tmp"}}, nil
+				}
+				osStdin = strings.NewReader("no\n")
 			},
 		},
 	}
@@ -139,6 +189,8 @@ func TestRunDownload(t *testing.T) {
 			origBuild := m4bBuild
 			origClean := m4bCleanIntermediateFiles
 			origSetenv := osSetenv
+			origReadDir := osReadDir
+			origStdin := osStdin
 
 			defer func() {
 				newDownloader = origDownloader
@@ -146,6 +198,8 @@ func TestRunDownload(t *testing.T) {
 				m4bBuild = origBuild
 				m4bCleanIntermediateFiles = origClean
 				osSetenv = origSetenv
+				osReadDir = origReadDir
+				osStdin = origStdin
 			}()
 
 			if tt.setupMock != nil {
@@ -191,7 +245,7 @@ func TestRunDownloadBadWriter(t *testing.T) {
 	origDownloader := newDownloader
 	defer func() { newDownloader = origDownloader }()
 
-	newDownloader = func(_ int) bookDownloader {
+	newDownloader = func(_, _ int) bookDownloader {
 		return &mockBookDownloader{err: nil}
 	}
 
@@ -389,6 +443,29 @@ func TestExecuteBuilder(t *testing.T) {
 				m4bCleanIntermediateFiles = func(_ string) error { return errors.New("mock clean error") }
 			},
 		},
+		{
+			name:    "unfinished downloads warning",
+			clean:   true,
+			wantErr: false,
+			errStr:  "",
+			setupMock: func() {
+				osReadDir = func(_ string) ([]os.DirEntry, error) {
+					return []os.DirEntry{mockDirEntry{name: "part3.tmp"}}, nil
+				}
+			},
+		},
+		{
+			name:    "unfinished downloads stderr write error",
+			clean:   true,
+			wantErr: true,
+			errStr:  "write output: bytes.Buffer: too large",
+			setupMock: func() {
+				osReadDir = func(_ string) ([]os.DirEntry, error) {
+					return []os.DirEntry{mockDirEntry{name: "part4.tmp"}}, nil
+				}
+				stderrWriter = failWriter{}
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -397,12 +474,16 @@ func TestExecuteBuilder(t *testing.T) {
 			origBuild := m4bBuild
 			origClean := m4bCleanIntermediateFiles
 			origAbs := filepathAbs
+			origReadDir := osReadDir
+			origStderr := stderrWriter
 
 			defer func() {
 				m4bCheckDependencies = origCheckDeps
 				m4bBuild = origBuild
 				m4bCleanIntermediateFiles = origClean
 				filepathAbs = origAbs
+				osReadDir = origReadDir
+				stderrWriter = origStderr
 			}()
 
 			m4bCheckDependencies = func() error { return nil }

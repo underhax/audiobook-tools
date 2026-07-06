@@ -11,6 +11,7 @@ import (
 
 	"github.com/underhax/audiobook-tools/internal/core"
 	"github.com/underhax/audiobook-tools/internal/m4b"
+	"github.com/underhax/audiobook-tools/pkg/utils"
 )
 
 // RunBuild parses flags and executes the independent M4B build workflow.
@@ -41,6 +42,13 @@ func RunBuild(args []string, out io.Writer) error {
 
 	if err := m4bCheckDependencies(); err != nil {
 		return fmt.Errorf("missing dependencies: %w", err)
+	}
+
+	if tmpFiles := unfinishedDownloads(*dir); len(tmpFiles) > 0 {
+		if err := utils.PrintUnfinishedWarning(stderrWriter, tmpFiles, "Please finish downloading before building M4B."); err != nil {
+			return fmt.Errorf("print warning: %w", err)
+		}
+		return nil
 	}
 
 	info := getMetadata(*dir)

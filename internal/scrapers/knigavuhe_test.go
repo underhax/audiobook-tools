@@ -113,3 +113,8 @@ func TestKnigavuheGetBookInfo_ParseError(t *testing.T) {
 		t.Fatalf("expected error containing 'mock read error', got %v", err)
 	}
 }
+
+func TestKnigavuheSetClient(_ *testing.T) {
+	s := NewKnigavuhe()
+	s.SetClient(nil)
+}

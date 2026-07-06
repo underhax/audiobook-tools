@@ -11,44 +11,79 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
+	"time"
 
 	"github.com/underhax/audiobook-tools/internal/core"
 	"github.com/underhax/audiobook-tools/internal/scrapers"
 	"github.com/underhax/audiobook-tools/pkg/utils"
 	"github.com/underhax/audiobook-tools/pkg/utils/httputil"
+	"github.com/underhax/audiobook-tools/pkg/utils/spinner"
 	"golang.org/x/sync/errgroup"
 )
 
 var generateOPF = core.GenerateOPF
 
-func defaultCreateFile(name string) (io.WriteCloser, error) {
-	out, err := os.Create(filepath.Clean(name))
+func defaultOpenFile(name string, flag int, perm os.FileMode) (io.WriteCloser, error) {
+	out, err := os.OpenFile(filepath.Clean(name), flag, perm)
 	if err != nil {
-		return nil, fmt.Errorf("os create: %w", err)
+		return nil, fmt.Errorf("os openfile: %w", err)
 	}
 	return out, nil
 }
 
-var createFile = defaultCreateFile
+func defaultRenameFile(oldpath, newpath string) error {
+	if err := os.Rename(oldpath, newpath); err != nil {
+		return fmt.Errorf("os rename: %w", err)
+	}
+	return nil
+}
+
+func defaultStatFile(name string) (os.FileInfo, error) {
+	fi, err := os.Stat(name)
+	if err != nil {
+		return nil, fmt.Errorf("os stat: %w", err)
+	}
+	return fi, nil
+}
+
+var (
+	openFile   = defaultOpenFile
+	renameFile = defaultRenameFile
+	statFile   = defaultStatFile
+	sleepFunc  = defaultSleepFunc
+)
+
+func defaultSleepFunc(ctx context.Context, d time.Duration) error {
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return fmt.Errorf("context done: %w", ctx.Err())
+	case <-timer.C:
+		return nil
+	}
+}
 
 // Downloader provides configuration for concurrency and network timeouts during the retrieval process.
 type Downloader struct {
-	Client  *http.Client
-	Workers int
+	Client     *http.Client
+	Workers    int
+	MaxRetries int
 }
 
 // New initializes a Downloader with a constrained worker pool to prevent overwhelming target servers.
-func New(workers int) *Downloader {
+func New(workers, retries int) *Downloader {
 	if workers <= 0 {
 		workers = 5
 	}
 	return &Downloader{
 		Client: &http.Client{
-			Transport: &httputil.RetryTransport{
-				MaxRetries: 3,
-			},
+			Transport: httputil.NewRetryTransport(httputil.WithMaxRetries(retries)),
 		},
-		Workers: workers,
+		Workers:    workers,
+		MaxRetries: retries,
 	}
 }
 
@@ -58,6 +93,7 @@ func (d *Downloader) DownloadBook(ctx context.Context, url, outputDir string, lo
 	if err != nil {
 		return nil, nil, "", err
 	}
+	scraper.SetClient(d.Client)
 
 	var htmlContent string
 	if !strings.Contains(url, "books.yandex.ru") {
@@ -179,8 +215,15 @@ func (d *Downloader) processExtras(ctx context.Context, info *core.BookInfo, tar
 }
 
 func (d *Downloader) downloadChapters(ctx context.Context, chapters []core.Chapter, targetDir string) error {
-	eg, egCtx := errgroup.WithContext(ctx)
+	var eg errgroup.Group
 	eg.SetLimit(d.Workers)
+	total := len(chapters)
+	var completed atomic.Int32
+
+	var mu sync.Mutex
+	var failedFiles []string
+
+	stopSpinner := spinner.Start(ctx, "Downloading...", &completed, total)
 
 	for i, chapter := range chapters {
 		eg.Go(func() error {
@@ -190,54 +233,120 @@ func (d *Downloader) downloadChapters(ctx context.Context, chapters []core.Chapt
 			}
 			fileName := fmt.Sprintf("%03d %s%s", i+1, utils.SanitizeFilename(chapter.Title), ext)
 			filePath := filepath.Join(targetDir, fileName)
-			log.Printf("Downloading: %s\n", fileName)
-			if err := d.downloadFile(egCtx, chapter.URL, filePath); err != nil {
+
+			if err := d.downloadFile(ctx, chapter.URL, filePath); err != nil {
+				mu.Lock()
+				failedFiles = append(failedFiles, fileName)
+				mu.Unlock()
 				return fmt.Errorf("download %s: %w", fileName, err)
 			}
+			completed.Add(1)
 			return nil
 		})
 	}
 
-	if err := eg.Wait(); err != nil {
+	err := eg.Wait()
+	stopSpinner()
+
+	if err != nil {
+		if len(failedFiles) > 0 {
+			paths := make([]string, len(failedFiles))
+			for i, f := range failedFiles {
+				paths[i] = filepath.Join(targetDir, f+".tmp")
+			}
+			if wErr := utils.PrintUnfinishedWarning(os.Stderr, paths, ""); wErr != nil {
+				return fmt.Errorf("print warning: %w", wErr)
+			}
+		}
 		return fmt.Errorf("wait for chapters: %w", err)
 	}
+
 	return nil
 }
 
 func (d *Downloader) downloadFile(ctx context.Context, url, path string) error {
+	cleanPath := filepath.Clean(path)
+
+	if fi, err := statFile(cleanPath); err == nil && !fi.IsDir() {
+		return nil
+	}
+
+	tmpPath := cleanPath + ".tmp"
+	var lastErr error
+
+	for attempt := 0; attempt <= d.MaxRetries; attempt++ {
+		if attempt > 0 {
+			delay := httputil.CalculateBackoff(httputil.ActionRetry, attempt, 2*time.Second)
+			if err := sleepFunc(ctx, delay); err != nil {
+				return err
+			}
+		}
+
+		err := d.doDownloadAttempt(ctx, url, tmpPath)
+		if err == nil {
+			if rerr := renameFile(tmpPath, cleanPath); rerr != nil {
+				return fmt.Errorf("rename tmp file: %w", rerr)
+			}
+			return nil
+		}
+
+		lastErr = err
+	}
+
+	return fmt.Errorf("failed after %d attempts: %w", d.MaxRetries+1, lastErr)
+}
+
+func (d *Downloader) doDownloadAttempt(ctx context.Context, url, tmpPath string) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, http.NoBody)
 	if err != nil {
 		return fmt.Errorf("create file request: %w", err)
 	}
 	utils.SetHeaders(req)
 
+	var resumeSize int64
+	fi, statErr := statFile(tmpPath)
+	if statErr == nil && !fi.IsDir() && fi.Size() > 0 {
+		resumeSize = fi.Size()
+		req.Header.Set("Range", fmt.Sprintf("bytes=%d-", resumeSize))
+	}
+
 	resp, err := d.Client.Do(req)
 	if err != nil {
 		return fmt.Errorf("do file request: %w", err)
 	}
 	defer func() {
-		if cerr := resp.Body.Close(); cerr != nil {
-			log.Printf("failed to close file response body: %v", cerr)
-		}
+		cerr := resp.Body.Close()
+		_ = cerr
 	}()
 
-	if resp.StatusCode != http.StatusOK {
+	if resp.StatusCode == http.StatusRequestedRangeNotSatisfiable {
+		return nil
+	}
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusPartialContent {
 		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 	}
 
-	cleanPath := filepath.Clean(path)
-	out, err := createFile(cleanPath)
-	if err != nil {
-		return fmt.Errorf("create file: %w", err)
+	openFlags := os.O_CREATE | os.O_WRONLY | os.O_TRUNC
+	if resp.StatusCode == http.StatusPartialContent && resumeSize > 0 {
+		openFlags = os.O_APPEND | os.O_WRONLY
 	}
-	defer func() {
-		if cerr := out.Close(); cerr != nil {
-			log.Printf("failed to close file: %v", cerr)
-		}
-	}()
 
-	if _, err = io.Copy(out, resp.Body); err != nil {
-		return fmt.Errorf("copy file content: %w", err)
+	out, err := openFile(tmpPath, openFlags, 0o644)
+	if err != nil {
+		return fmt.Errorf("open tmp file: %w", err)
 	}
-	return nil
+
+	var copyErr error
+	if _, err = io.Copy(out, resp.Body); err != nil {
+		copyErr = fmt.Errorf("copy file content: %w", err)
+	}
+
+	if cerr := out.Close(); cerr != nil {
+		if copyErr == nil {
+			copyErr = fmt.Errorf("close tmp file: %w", cerr)
+		}
+	}
+
+	return copyErr
 }

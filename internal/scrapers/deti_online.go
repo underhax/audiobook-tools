@@ -26,6 +26,13 @@ func NewDetiOnline() *DetiOnline {
 	}
 }
 
+// SetClient assigns the HTTP client to be used for all internal requests.
+func (s *DetiOnline) SetClient(client *http.Client) {
+	if client != nil {
+		s.Client = client
+	}
+}
+
 // GetBookInfo translates the raw HTML response into structured domain models.
 func (s *DetiOnline) GetBookInfo(ctx context.Context, htmlContent, bookURL string) (core.BookInfo, []core.Chapter, error) {
 	doc, err := html.Parse(stringsNewReader(htmlContent))

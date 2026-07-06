@@ -18,7 +18,6 @@ import (
 	"time"
 
 	"github.com/underhax/audiobook-tools/internal/core"
-	"github.com/underhax/audiobook-tools/pkg/utils/httputil"
 )
 
 // BooksYandex represents the BooksYandex website scraper/API client.
@@ -30,10 +29,15 @@ type BooksYandex struct {
 // NewBooksYandex initializes a new BooksYandex scraper.
 func NewBooksYandex() *BooksYandex {
 	return &BooksYandex{
-		Client: &http.Client{
-			Transport: &httputil.RetryTransport{MaxRetries: 3},
-		},
+		Client:  http.DefaultClient,
 		BaseURL: "https://api.bookmate.yandex.net",
+	}
+}
+
+// SetClient assigns the HTTP client to be used for all internal requests.
+func (b *BooksYandex) SetClient(client *http.Client) {
+	if client != nil {
+		b.Client = client
 	}
 }
 

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 
 	"github.com/underhax/audiobook-tools/internal/core"
@@ -22,6 +23,11 @@ type Knigavuhe struct{}
 // NewKnigavuhe instantiates the knigavuhe.org parser to fulfill the Scraper interface requirements.
 func NewKnigavuhe() *Knigavuhe {
 	return &Knigavuhe{}
+}
+
+// SetClient implements the Scraper interface. Knigavuhe does not make HTTP requests.
+func (s *Knigavuhe) SetClient(client *http.Client) {
+	_ = client
 }
 
 // GetBookInfo translates the raw HTML response into structured domain models for downstream processing.
@@ -138,7 +144,7 @@ func getText(n *html.Node) string {
 		}
 	}
 	f(n)
-	return strings.TrimSpace(buf.String())
+	return strings.Join(strings.Fields(buf.String()), " ")
 }
 
 func extractJSONPlaylist(htmlContent string) ([]core.Chapter, error) {

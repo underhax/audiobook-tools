@@ -12,10 +12,10 @@ import (
 	"strconv"
 	"strings"
 	"sync/atomic"
-	"time"
 
 	"github.com/underhax/audiobook-tools/internal/core"
 	"github.com/underhax/audiobook-tools/pkg/utils"
+	"github.com/underhax/audiobook-tools/pkg/utils/spinner"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -314,25 +314,7 @@ func convertAllToM4A(ctx context.Context, targetDir string, sourceFiles []string
 	g, gCtx := errgroup.WithContext(ctx)
 	g.SetLimit(runtime.NumCPU())
 
-	done := make(chan struct{})
-	start := time.Now()
-	go func() {
-		ticker := time.NewTicker(150 * time.Millisecond)
-		defer ticker.Stop()
-		frames := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
-		i := 0
-		for {
-			select {
-			case <-done:
-				return
-			case <-ticker.C:
-				c := completed.Load()
-				elapsed := time.Since(start).Round(time.Second)
-				fmt.Printf("\r\033[K%s Converting... [%d/%d] (Elapsed: %s)", frames[i%len(frames)], c, totalFiles, elapsed)
-				i++
-			}
-		}
-	}()
+	stopSpinner := spinner.Start(ctx, "Converting...", &completed, totalFiles)
 
 	for _, file := range sourceFiles {
 		g.Go(func() error {
@@ -345,8 +327,8 @@ func convertAllToM4A(ctx context.Context, targetDir string, sourceFiles []string
 	}
 
 	err := g.Wait()
-	close(done)
-	fmt.Print("\r\033[K")
+	stopSpinner()
+
 	if err != nil {
 		return fmt.Errorf("errgroup wait: %w", err)
 	}

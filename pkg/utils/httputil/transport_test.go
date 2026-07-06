@@ -356,3 +356,36 @@ func TestRetryTransport_ContextCancelAfter500(t *testing.T) {
 		t.Fatalf("expected context canceled, got %v", err)
 	}
 }
+
+func TestRetryOption_WithMaxRetries(t *testing.T) {
+	rt := NewRetryTransport(WithMaxRetries(5))
+	if rt.MaxRetries != 5 {
+		t.Errorf("expected 5, got %d", rt.MaxRetries)
+	}
+}
+
+func TestRetryOption_WithBaseTransport(t *testing.T) {
+	base := &http.Transport{}
+	rt := NewRetryTransport(WithBaseTransport(base))
+	if rt.Base != base {
+		t.Errorf("expected base transport to be set")
+	}
+}
+
+func TestGetBaseTransport(t *testing.T) {
+	base := &http.Transport{}
+
+	rt := NewRetryTransport(WithBaseTransport(base))
+	if got := GetBaseTransport(rt); got != base {
+		t.Errorf("expected base transport")
+	}
+
+	rtNil := &RetryTransport{}
+	if got := GetBaseTransport(rtNil); got != http.DefaultTransport {
+		t.Errorf("expected DefaultTransport for nil base")
+	}
+
+	if got := GetBaseTransport(base); got != base {
+		t.Errorf("expected same transport")
+	}
+}

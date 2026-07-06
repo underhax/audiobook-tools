@@ -11,8 +11,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/underhax/audiobook-tools/pkg/utils/httputil"
 )
 
 func TestExtractUUID(t *testing.T) {
@@ -128,9 +126,7 @@ func TestBooksYandex_GetBookInfo(t *testing.T) {
 	defer server.Close()
 
 	scraper := NewBooksYandex()
-	if rt, ok := scraper.Client.Transport.(*httputil.RetryTransport); ok {
-		rt.TestMode = true
-	}
+
 	scraper.BaseURL = server.URL
 
 	info, chapters, err := scraper.GetBookInfo(context.Background(), "", "https://example.com/audiobooks/testuuid")
@@ -178,7 +174,7 @@ func TestBooksYandex_GetBookInfo_InvalidURL(t *testing.T) {
 
 func TestBooksYandex_fetchInfo_Errors(t *testing.T) {
 	scraper := NewBooksYandex()
-	scraper.Client.Transport = http.DefaultTransport
+	scraper.SetClient(&http.Client{Transport: http.DefaultTransport})
 	scraper.BaseURL = "http://localhost:0"
 
 	_, err := scraper.fetchInfo(context.Background(), "uuid", "token")
@@ -212,7 +208,7 @@ func TestBooksYandex_fetchInfo_Errors(t *testing.T) {
 
 func TestBooksYandex_fetchPlaylists_Errors(t *testing.T) {
 	scraper := NewBooksYandex()
-	scraper.Client.Transport = http.DefaultTransport
+	scraper.SetClient(&http.Client{Transport: http.DefaultTransport})
 	scraper.BaseURL = "http://localhost:0"
 
 	_, err := scraper.fetchPlaylists(context.Background(), "uuid", "token")
@@ -361,9 +357,7 @@ func TestBooksYandex_GetBookInfo_FetchInfoError(t *testing.T) {
 	defer server.Close()
 
 	scraper := NewBooksYandex()
-	if rt, ok := scraper.Client.Transport.(*httputil.RetryTransport); ok {
-		rt.TestMode = true
-	}
+
 	scraper.BaseURL = server.URL
 
 	_, _, err := scraper.GetBookInfo(context.Background(), "", "https://example.com/audiobooks/testuuid")
@@ -389,9 +383,7 @@ func TestBooksYandex_GetBookInfo_FetchPlaylistsError(t *testing.T) {
 	defer server.Close()
 
 	scraper := NewBooksYandex()
-	if rt, ok := scraper.Client.Transport.(*httputil.RetryTransport); ok {
-		rt.TestMode = true
-	}
+
 	scraper.BaseURL = server.URL
 
 	_, _, err := scraper.GetBookInfo(context.Background(), "", "https://example.com/audiobooks/testuuid")
@@ -462,9 +454,7 @@ func TestBooksYandex_fetchInfo_NotListenable(t *testing.T) {
 	defer server.Close()
 
 	scraper := NewBooksYandex()
-	if rt, ok := scraper.Client.Transport.(*httputil.RetryTransport); ok {
-		rt.TestMode = true
-	}
+
 	scraper.BaseURL = server.URL
 
 	_, err := scraper.fetchInfo(context.Background(), "testuuid", "token")
@@ -494,12 +484,12 @@ func (m *mockRoundTripper) RoundTrip(*http.Request) (*http.Response, error) {
 
 func TestBooksYandex_fetchInfo_CloseError(t *testing.T) {
 	scraper := NewBooksYandex()
-	scraper.Client.Transport = &mockRoundTripper{
+	scraper.SetClient(&http.Client{Transport: &mockRoundTripper{
 		resp: &http.Response{
 			StatusCode: http.StatusOK,
 			Body:       errCloseReader(0),
 		},
-	}
+	}})
 	scraper.BaseURL = "http://example.net"
 
 	_, err := scraper.fetchInfo(context.Background(), "testuuid", "token")
@@ -562,12 +552,12 @@ func TestMapBooksYandexInfoToBookInfo_Full(t *testing.T) {
 
 func TestBooksYandex_fetchPlaylists_CloseError(t *testing.T) {
 	scraper := NewBooksYandex()
-	scraper.Client.Transport = &mockRoundTripper{
+	scraper.SetClient(&http.Client{Transport: &mockRoundTripper{
 		resp: &http.Response{
 			StatusCode: http.StatusOK,
 			Body:       errCloseReader(0),
 		},
-	}
+	}})
 	scraper.BaseURL = "http://example.com"
 
 	_, err := scraper.fetchPlaylists(context.Background(), "testuuid", "token")
@@ -605,9 +595,7 @@ func TestBooksYandex_fetchPlaylists_EmptyTrackURL(t *testing.T) {
 	defer server.Close()
 
 	scraper := NewBooksYandex()
-	if rt, ok := scraper.Client.Transport.(*httputil.RetryTransport); ok {
-		rt.TestMode = true
-	}
+
 	scraper.BaseURL = server.URL
 
 	chapters, err := scraper.fetchPlaylists(context.Background(), "testuuid", "token")

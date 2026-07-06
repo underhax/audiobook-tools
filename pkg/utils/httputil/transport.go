@@ -89,6 +89,47 @@ func parseRetryAfter(headerValue string, defaultDelay time.Duration) time.Durati
 	return defaultDelay
 }
 
+// RetryOption configures the RetryTransport.
+type RetryOption func(*RetryTransport)
+
+// WithMaxRetries sets the maximum number of retry attempts.
+func WithMaxRetries(n int) RetryOption {
+	return func(t *RetryTransport) {
+		t.MaxRetries = n
+	}
+}
+
+// WithBaseTransport sets the underlying round tripper.
+func WithBaseTransport(base http.RoundTripper) RetryOption {
+	return func(t *RetryTransport) {
+		t.Base = base
+	}
+}
+
+// NewRetryTransport creates a new RetryTransport with the provided options.
+func NewRetryTransport(opts ...RetryOption) *RetryTransport {
+	rt := &RetryTransport{
+		MaxRetries: 3,
+		Base:       http.DefaultTransport,
+	}
+	for _, opt := range opts {
+		opt(rt)
+	}
+	return rt
+}
+
+// GetBaseTransport safely extracts the underlying transport from a round tripper.
+// If the provided transport is a *RetryTransport, it returns its Base.
+func GetBaseTransport(rt http.RoundTripper) http.RoundTripper {
+	if retryRT, ok := rt.(*RetryTransport); ok {
+		if retryRT.Base != nil {
+			return retryRT.Base
+		}
+		return http.DefaultTransport
+	}
+	return rt
+}
+
 // RetryTransport wraps an http.RoundTripper with retry, backoff, and jitter logic.
 type RetryTransport struct {
 	Base       http.RoundTripper

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"strings"
 
@@ -16,6 +17,7 @@ import (
 // Scraper defines the behavior required for any audiobook source parser.
 type Scraper interface {
 	GetBookInfo(ctx context.Context, htmlContent, bookURL string) (core.BookInfo, []core.Chapter, error)
+	SetClient(client *http.Client)
 }
 
 const authorUnknown = "Автор неизвестен"
