@@ -14,14 +14,11 @@ import (
 // ActionType defines how the transport should handle the response.
 type ActionType int
 
+// ActionType constants decouple HTTP status codes for testable retry logic.
 const (
-	// ActionRetry indicates a transient error.
 	ActionRetry ActionType = iota
-	// ActionRateLimit indicates a rate limit.
 	ActionRateLimit
-	// ActionAbort indicates a fatal error.
 	ActionAbort
-	// ActionSuccess indicates a successful request.
 	ActionSuccess
 )
 
@@ -96,6 +93,14 @@ func parseRetryAfter(headerValue string, defaultDelay time.Duration) time.Durati
 type RetryTransport struct {
 	Base       http.RoundTripper
 	MaxRetries int
+	TestMode   bool
+}
+
+func (t *RetryTransport) sleep(ctx context.Context, delay time.Duration) error {
+	if t.TestMode {
+		delay = time.Millisecond
+	}
+	return sleepContext(ctx, delay)
 }
 
 // RoundTrip executes a single HTTP transaction, returning a Response for the provided Request.
@@ -114,7 +119,7 @@ func (t *RetryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	}
 
 	for attempt := 0; attempt <= maxRetries; attempt++ {
-		if errSleep := sleepContext(req.Context(), getJitterDuration()); errSleep != nil {
+		if errSleep := t.sleep(req.Context(), getJitterDuration()); errSleep != nil {
 			return nil, errSleep
 		}
 
@@ -123,7 +128,7 @@ func (t *RetryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 			if attempt == maxRetries {
 				return nil, fmt.Errorf("max retries reached (%d): %w", maxRetries, err)
 			}
-			if errSleep := sleepContext(req.Context(), CalculateBackoff(ActionRetry, attempt, 2*time.Second)); errSleep != nil {
+			if errSleep := t.sleep(req.Context(), CalculateBackoff(ActionRetry, attempt, 2*time.Second)); errSleep != nil {
 				return nil, errSleep
 			}
 			continue
@@ -150,13 +155,10 @@ func (t *RetryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 			delay = parseRetryAfter(resp.Header.Get("Retry-After"), delay)
 		}
 
-		if errSleep := sleepContext(req.Context(), delay); errSleep != nil {
+		if errSleep := t.sleep(req.Context(), delay); errSleep != nil {
 			return nil, errSleep
 		}
 	}
 
-	if err != nil {
-		return nil, fmt.Errorf("roundtrip failed: %w", err)
-	}
 	return resp, nil
 }

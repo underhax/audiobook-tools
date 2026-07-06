@@ -44,7 +44,7 @@ func GetToken() (string, error) {
 		return token, nil
 	}
 
-	configDir, err := os.UserConfigDir()
+	configDir, err := userConfigDir()
 	if err != nil {
 		return "", fmt.Errorf("get user config dir: %w", err)
 	}
@@ -74,7 +74,7 @@ func GetToken() (string, error) {
 
 // SaveToken saves the BooksYandex token to the user config directory and returns the path.
 func SaveToken(token string) (string, error) {
-	configDir, err := os.UserConfigDir()
+	configDir, err := userConfigDir()
 	if err != nil {
 		return "", fmt.Errorf("get user config dir: %w", err)
 	}
@@ -86,7 +86,7 @@ func SaveToken(token string) (string, error) {
 	}
 
 	configPath := filepath.Join(appDir, "books_yandex.json")
-	data, err := json.MarshalIndent(map[string]string{"token": token}, "", "  ")
+	data, err := jsonMarshalIndent(map[string]string{"token": token}, "", "  ")
 	if err != nil {
 		return "", fmt.Errorf("marshal config: %w", err)
 	}
@@ -99,7 +99,6 @@ func SaveToken(token string) (string, error) {
 	return configPath, nil
 }
 
-// extractUUID extracts the UUID from a BooksYandex URL.
 func extractUUID(bookURL string) (string, error) {
 	re := regexp.MustCompile(`audiobooks/([^/?]+)`)
 	matches := re.FindStringSubmatch(bookURL)

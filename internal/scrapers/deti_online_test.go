@@ -2,6 +2,9 @@ package scrapers
 
 import (
 	"context"
+	"errors"
+	"io"
+	"net/http"
 	"strings"
 	"testing"
 )
@@ -74,5 +77,148 @@ func TestRot13(t *testing.T) {
 		if got != c.want {
 			t.Errorf("rot13(%q) == %q, want %q", c.in, got, c.want)
 		}
+	}
+}
+
+type detiMockRoundTripper struct {
+	resp *http.Response
+	err  error
+}
+
+func (m *detiMockRoundTripper) RoundTrip(*http.Request) (*http.Response, error) {
+	return m.resp, m.err
+}
+
+func TestDetiOnlineGetBookInfo_Coverage(t *testing.T) {
+	htmlContent := `
+	<html>
+	<body>
+		<li class="group t-2">Group 2</li>
+		<li class="group t-1">Group 1</li>
+		<li class="group">Group 3</li>
+		<li class="item is-ripple"></li>
+		<li class="item is-ripple" data-f="grfg"></li>
+		<script src="/audio-player.js"></script>
+	</body>
+	</html>
+	`
+	s := NewDetiOnline()
+	s.Client = &http.Client{
+		Transport: &detiMockRoundTripper{
+			resp: &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(strings.NewReader(`stat5.deti-online.com`)),
+			},
+		},
+	}
+
+	info, _, err := s.GetBookInfo(context.Background(), htmlContent, "https://example.com/test")
+	if err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+
+	cases := []struct {
+		expectedAuthor string
+	}{
+		{authorUnknown},
+	}
+
+	for _, c := range cases {
+		if info.Author != c.expectedAuthor {
+			t.Errorf("expected Author %q, got %q", c.expectedAuthor, info.Author)
+		}
+	}
+}
+
+func TestDetiOnlineGetBookInfo_RequestError(t *testing.T) {
+	s := NewDetiOnline()
+	htmlContent := `<html><body><script src="http://example.com/audio-player.js"></script></body></html>`
+	s.Client = &http.Client{
+		Transport: &detiMockRoundTripper{
+			err: errors.New("network error"),
+		},
+	}
+	_, _, err := s.GetBookInfo(context.Background(), htmlContent, string([]byte{0x7f}))
+	if err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+}
+
+func TestDetiOnlineGetBookInfo_InvalidPlayerURL(t *testing.T) {
+	s := NewDetiOnline()
+	htmlContent := `<html><body><script src="http://127.0.0.1` + string([]byte{0x7f}) + `/script.js"></script></body></html>`
+	_, _, err := s.GetBookInfo(context.Background(), htmlContent, "https://example.com/test")
+	if err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+}
+
+func TestDetiOnline_getServerDomain_Errors(t *testing.T) {
+	cases := []struct {
+		client *http.Client
+		name   string
+		url    string
+	}{
+		{
+			name: "RequestError",
+			url:  "http://\x00",
+		},
+		{
+			client: &http.Client{
+				Transport: &detiMockRoundTripper{
+					resp: &http.Response{
+						StatusCode: http.StatusOK,
+						Body:       errCloseReader(0),
+					},
+				},
+			},
+			name: "CloseError",
+			url:  "http://example.org",
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			s := NewDetiOnline()
+			if c.client != nil {
+				s.Client = c.client
+			}
+			fallback := s.getServerDomain(context.Background(), c.url)
+			if fallback != "stat4.deti-online.com" {
+				t.Fatalf("expected fallback, got %q", fallback)
+			}
+		})
+	}
+}
+
+func TestDetiOnlineGetBookInfo_NoStatDomain(t *testing.T) {
+	s := NewDetiOnline()
+	s.Client = &http.Client{
+		Transport: &detiMockRoundTripper{
+			resp: &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(strings.NewReader(`no domain here`)),
+			},
+		},
+	}
+	htmlContent := `<html><body><script src="/audio-player.js"></script></body></html>`
+	_, _, err := s.GetBookInfo(context.Background(), htmlContent, "https://example.com/test")
+	if err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+}
+
+func TestDetiOnlineGetBookInfo_ParseError(t *testing.T) {
+	orig := stringsNewReader
+	defer func() { stringsNewReader = orig }()
+
+	stringsNewReader = func(_ string) io.Reader {
+		return errReader(0)
+	}
+
+	s := NewDetiOnline()
+	_, _, err := s.GetBookInfo(context.Background(), "html", "https://example.com/test")
+	if err == nil || !strings.Contains(err.Error(), "mock read error") {
+		t.Fatalf("expected error containing 'mock read error', got %v", err)
 	}
 }

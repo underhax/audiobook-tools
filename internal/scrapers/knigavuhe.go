@@ -26,7 +26,7 @@ func NewKnigavuhe() *Knigavuhe {
 
 // GetBookInfo translates the raw HTML response into structured domain models for downstream processing.
 func (s *Knigavuhe) GetBookInfo(_ context.Context, htmlContent, bookURL string) (core.BookInfo, []core.Chapter, error) {
-	doc, err := html.Parse(strings.NewReader(htmlContent))
+	doc, err := html.Parse(stringsNewReader(htmlContent))
 	if err != nil {
 		return core.BookInfo{}, nil, fmt.Errorf("failed to parse HTML: %w", err)
 	}
@@ -38,7 +38,7 @@ func (s *Knigavuhe) GetBookInfo(_ context.Context, htmlContent, bookURL string) 
 	extractNodes(doc, &info)
 
 	if info.Author == "" {
-		info.Author = "Автор неизвестен"
+		info.Author = authorUnknown
 		info.Authors = append(info.Authors, info.Author)
 	}
 

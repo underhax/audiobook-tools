@@ -14,17 +14,21 @@ import (
 
 // DetiOnline isolates the HTML parsing logic for deti-online.com
 type DetiOnline struct {
+	Client  *http.Client
 	Version int
 }
 
 // NewDetiOnline instantiates the deti-online.com parser.
 func NewDetiOnline() *DetiOnline {
-	return &DetiOnline{Version: 1}
+	return &DetiOnline{
+		Version: 1,
+		Client:  http.DefaultClient,
+	}
 }
 
 // GetBookInfo translates the raw HTML response into structured domain models.
 func (s *DetiOnline) GetBookInfo(ctx context.Context, htmlContent, bookURL string) (core.BookInfo, []core.Chapter, error) {
-	doc, err := html.Parse(strings.NewReader(htmlContent))
+	doc, err := html.Parse(stringsNewReader(htmlContent))
 	if err != nil {
 		return core.BookInfo{}, nil, fmt.Errorf("failed to parse HTML: %w", err)
 	}
@@ -39,7 +43,7 @@ func (s *DetiOnline) GetBookInfo(ctx context.Context, htmlContent, bookURL strin
 	extractDetiNodes(doc, &info, &chapters, &playerJSURL, s.Version)
 
 	if info.Author == "" {
-		info.Author = "Автор неизвестен"
+		info.Author = authorUnknown
 		info.Authors = append(info.Authors, info.Author)
 	}
 
@@ -55,7 +59,7 @@ func (s *DetiOnline) GetBookInfo(ctx context.Context, htmlContent, bookURL strin
 		info.Title = strings.TrimSpace(info.Title)
 	}
 
-	serverDomain := getServerDomain(ctx, playerJSURL)
+	serverDomain := s.getServerDomain(ctx, playerJSURL)
 
 	for i := range chapters {
 		chapters[i].URL = strings.ReplaceAll(chapters[i].URL, "{SERVER}", serverDomain)
@@ -64,7 +68,7 @@ func (s *DetiOnline) GetBookInfo(ctx context.Context, htmlContent, bookURL strin
 	return info, chapters, nil
 }
 
-func getServerDomain(ctx context.Context, playerJSURL string) string {
+func (s *DetiOnline) getServerDomain(ctx context.Context, playerJSURL string) string {
 	fallback := "stat4.deti-online.com"
 	if playerJSURL == "" {
 		return fallback
@@ -79,7 +83,7 @@ func getServerDomain(ctx context.Context, playerJSURL string) string {
 		return fallback
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := s.Client.Do(req)
 	if err != nil {
 		return fallback
 	}

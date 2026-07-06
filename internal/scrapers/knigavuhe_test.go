@@ -2,6 +2,8 @@ package scrapers
 
 import (
 	"context"
+	"io"
+	"strings"
 	"testing"
 )
 
@@ -89,5 +91,25 @@ func TestExtractJSONPlaylist_Error(t *testing.T) {
 	_, err = extractJSONPlaylist("BookPlayer is here [{ no end")
 	if err == nil {
 		t.Error("expected error for missing JSON array end, got nil")
+	}
+
+	_, err = extractJSONPlaylist("BookPlayer is here [{invalid json}]")
+	if err == nil {
+		t.Error("expected error for invalid json, got nil")
+	}
+}
+
+func TestKnigavuheGetBookInfo_ParseError(t *testing.T) {
+	orig := stringsNewReader
+	defer func() { stringsNewReader = orig }()
+
+	stringsNewReader = func(_ string) io.Reader {
+		return errReader(0)
+	}
+
+	scraper := NewKnigavuhe()
+	_, _, err := scraper.GetBookInfo(context.Background(), "html", "https://example.com/book")
+	if err == nil || !strings.Contains(err.Error(), "mock read error") {
+		t.Fatalf("expected error containing 'mock read error', got %v", err)
 	}
 }
