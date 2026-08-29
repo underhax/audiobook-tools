@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"text/template"
 )
 
@@ -23,7 +24,8 @@ const opfTemplateStr = `<?xml version="1.0" encoding="utf-8"?>
     <dc:language>ru</dc:language>{{end}}{{if .PublishedYear}}
     <dc:date>{{.PublishedYear}}</dc:date>{{end}}{{range .Genres}}
     <dc:subject>{{.}}</dc:subject>{{end}}{{if .Series}}
-    <meta name="calibre:series" content="{{.Series}}" />{{end}}
+    <meta name="calibre:series" content="{{.Series}}" />{{end}}{{if .SeriesNumber}}
+    <meta name="calibre:series_index" content="{{.SeriesNumber}}" />{{end}}
     <meta name="cover" content="cover.jpg" />
   </metadata>
   <manifest>
@@ -42,13 +44,16 @@ func defaultExecuteTemplate(wr io.Writer, data any) error {
 
 var executeTemplate = defaultExecuteTemplate
 
+func escapeSlice(items []string) []string {
+	escaped := make([]string, 0, len(items))
+	for _, item := range items {
+		escaped = append(escaped, html.EscapeString(item))
+	}
+	return escaped
+}
+
 // GenerateOPF creates an XML OPF metadata string for the given BookInfo.
 func GenerateOPF(info *BookInfo) (string, error) {
-	safeGenres := make([]string, 0, len(info.Genres))
-	for _, g := range info.Genres {
-		safeGenres = append(safeGenres, html.EscapeString(g))
-	}
-
 	safeInfo := BookInfo{
 		Title:         html.EscapeString(info.Title),
 		Author:        html.EscapeString(info.Author),
@@ -57,8 +62,9 @@ func GenerateOPF(info *BookInfo) (string, error) {
 		PublishedYear: html.EscapeString(info.PublishedYear),
 		Publisher:     html.EscapeString(info.Publisher),
 		Series:        html.EscapeString(info.Series),
+		SeriesNumber:  html.EscapeString(info.SeriesNumber),
 		Language:      html.EscapeString(info.Language),
-		Genres:        safeGenres,
+		Genres:        escapeSlice(info.Genres),
 	}
 
 	var buf bytes.Buffer
@@ -69,6 +75,44 @@ func GenerateOPF(info *BookInfo) (string, error) {
 	return buf.String(), nil
 }
 
+type creatorNode struct {
+	Role  string `xml:"http://www.idpf.org/2007/opf role,attr"`
+	Value string `xml:",chardata"`
+}
+
+type metaNode struct {
+	Name     string `xml:"name,attr"`
+	Content  string `xml:"content,attr"`
+	Property string `xml:"property,attr"`
+	Value    string `xml:",chardata"`
+}
+
+func parseStrings(items []string) []string {
+	result := make([]string, 0, len(items))
+	for _, item := range items {
+		trimmed := strings.TrimSpace(item)
+		if trimmed != "" {
+			result = append(result, trimmed)
+		}
+	}
+	return result
+}
+
+func parseMetas(metas []metaNode, info *BookInfo) {
+	for _, m := range metas {
+		switch {
+		case m.Name == "calibre:series" || m.Name == "series":
+			info.Series = m.Content
+		case m.Name == "calibre:series_index" || m.Name == "series_index":
+			info.SeriesNumber = m.Content
+		case m.Property == "belongs-to-collection":
+			info.Series = strings.TrimSpace(m.Value)
+		case m.Property == "group-position":
+			info.SeriesNumber = strings.TrimSpace(m.Value)
+		}
+	}
+}
+
 // ParseOPF reads a metadata.opf file and constructs a BookInfo.
 func ParseOPF(path string) (*BookInfo, error) {
 	data, err := os.ReadFile(filepath.Clean(path))
@@ -76,24 +120,15 @@ func ParseOPF(path string) (*BookInfo, error) {
 		return nil, fmt.Errorf("read file: %w", err)
 	}
 
-	type Creator struct {
-		Role  string `xml:"http://www.idpf.org/2007/opf role,attr"`
-		Value string `xml:",chardata"`
-	}
-
-	type Meta struct {
-		Name    string `xml:"name,attr"`
-		Content string `xml:"content,attr"`
-	}
-
 	type Metadata struct {
-		Title       string    `xml:"title"`
-		Description string    `xml:"description"`
-		Date        string    `xml:"date"`
-		Publisher   string    `xml:"publisher"`
-		Language    string    `xml:"language"`
-		Creators    []Creator `xml:"creator"`
-		Metas       []Meta    `xml:"meta"`
+		Title       string        `xml:"title"`
+		Description string        `xml:"description"`
+		Date        string        `xml:"date"`
+		Publisher   string        `xml:"publisher"`
+		Language    string        `xml:"language"`
+		Creators    []creatorNode `xml:"creator"`
+		Subjects    []string      `xml:"subject"`
+		Metas       []metaNode    `xml:"meta"`
 	}
 
 	type Package struct {
@@ -112,13 +147,10 @@ func ParseOPF(path string) (*BookInfo, error) {
 		PublishedYear: pkg.Metadata.Date,
 		Publisher:     pkg.Metadata.Publisher,
 		Language:      pkg.Metadata.Language,
+		Genres:        parseStrings(pkg.Metadata.Subjects),
 	}
 
-	for _, m := range pkg.Metadata.Metas {
-		if m.Name == "calibre:series" {
-			info.Series = m.Content
-		}
-	}
+	parseMetas(pkg.Metadata.Metas, info)
 
 	for _, c := range pkg.Metadata.Creators {
 		switch c.Role {

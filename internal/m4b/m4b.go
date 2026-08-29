@@ -156,6 +156,79 @@ func generateConcatAndMetaFiles(ctx context.Context, targetDir string, sourceFil
 	return nil
 }
 
+var iso639Map = map[string]string{
+	"en": "eng",
+	"zh": "zho",
+	"es": "spa",
+	"ar": "ara",
+	"fr": "fra",
+	"ru": "rus",
+	"pt": "por",
+	"de": "deu",
+	"ja": "jpn",
+	"tr": "tur",
+	"it": "ita",
+	"pl": "pol",
+	"uk": "ukr",
+	"nl": "nld",
+	"be": "bel",
+	"kk": "kaz",
+}
+
+func normalizeLanguage(lang string) string {
+	lower := strings.ToLower(strings.TrimSpace(lang))
+	if lower == "" {
+		return ""
+	}
+	if mapped, ok := iso639Map[lower]; ok {
+		return mapped
+	}
+	return lower
+}
+
+func appendMetadata(args []string, key, value string) []string {
+	if value != "" {
+		return append(args, "-metadata", key+"="+value)
+	}
+	return args
+}
+
+func buildMetadataArgs(info *core.BookInfo) []string {
+	args := []string{"-c:a", "copy"}
+
+	pairs := [][2]string{
+		{"title", info.Title},
+		{"artist", info.Author},
+		{"album_artist", info.Author},
+		{"album", info.Title},
+		{"composer", info.Narrator},
+		{"publisher", info.Publisher},
+	}
+	for _, p := range pairs {
+		args = appendMetadata(args, p[0], p[1])
+	}
+
+	if lang := normalizeLanguage(info.Language); lang != "" {
+		args = append(args, "-metadata:s:a:0", "language="+lang)
+		args = appendMetadata(args, "language", lang)
+	}
+
+	args = appendMetadata(args, "grouping", info.Series)
+	args = appendMetadata(args, "show", info.Series)
+	args = appendMetadata(args, "series-part", info.SeriesNumber)
+	args = appendMetadata(args, "episode_id", info.SeriesNumber)
+
+	if len(info.Genres) > 0 {
+		args = appendMetadata(args, "genre", strings.Join(info.Genres, ", "))
+	}
+	if info.Description != "" || len(info.Translators) > 0 || info.AgeRestriction != "" {
+		args = appendMetadata(args, "comment", info.FormattedDescription())
+	}
+	args = appendMetadata(args, "date", info.PublishedYear)
+
+	return args
+}
+
 func runFFmpeg(ctx context.Context, info *core.BookInfo, targetDir, concatPath, metaPath string, debug bool) (string, error) {
 	outFileName := utils.SanitizeFilename(info.Title) + ".m4b"
 
@@ -181,34 +254,7 @@ func runFFmpeg(ctx context.Context, info *core.BookInfo, targetDir, concatPath, 
 		args = append(args, "-map", "2:v", "-c:v", "mjpeg", "-disposition:v", "attached_pic")
 	}
 
-	args = append(args,
-		"-c:a", "copy",
-		"-metadata", "title="+info.Title,
-		"-metadata", "artist="+info.Author,
-		"-metadata", "album_artist="+info.Author,
-		"-metadata", "album="+info.Title,
-		"-metadata", "composer="+info.Narrator,
-	)
-
-	if info.Publisher != "" {
-		args = append(args, "-metadata", "publisher="+info.Publisher)
-	}
-	if info.Language != "" {
-		args = append(args, "-metadata", "language="+info.Language)
-	} else {
-		args = append(args, "-metadata", "language=rus")
-	}
-	if info.Series != "" {
-		args = append(args, "-metadata", "grouping="+info.Series)
-	}
-
-	if info.Description != "" || len(info.Translators) > 0 || info.AgeRestriction != "" {
-		args = append(args, "-metadata", "comment="+info.FormattedDescription())
-	}
-	if info.PublishedYear != "" {
-		args = append(args, "-metadata", "date="+info.PublishedYear)
-	}
-
+	args = append(args, buildMetadataArgs(info)...)
 	args = append(args, outFileName)
 
 	cmd := exec.CommandContext(ctx, "ffmpeg")

@@ -23,6 +23,8 @@ func TestGenerateOPF(t *testing.T) {
 				Narrator:      "Jane Doe",
 				Description:   "A great book.",
 				PublishedYear: "2023",
+				Series:        "My Series",
+				SeriesNumber:  "4",
 				Genres:        []string{"Sci-Fi", "Fiction & Fantasy"},
 			},
 			wantErr: false,
@@ -53,6 +55,9 @@ func TestGenerateOPF(t *testing.T) {
 			if tt.info.Narrator == "" && strings.Contains(xmlStr, "opf:role=\"nrt\"") {
 				t.Errorf("Did not expect narrator")
 			}
+			if tt.info.SeriesNumber != "" && !strings.Contains(xmlStr, "calibre:series_index") {
+				t.Errorf("Expected series index")
+			}
 		})
 	}
 }
@@ -74,7 +79,7 @@ func mockExecuteTemplateError(_ io.Writer, _ any) error {
 	return errors.New("mock template error")
 }
 
-func TestParseOPF(t *testing.T) {
+func TestParseOPF_Valid(t *testing.T) {
 	tempDir := t.TempDir()
 
 	validOPF := `<?xml version="1.0" encoding="utf-8"?>
@@ -87,7 +92,10 @@ func TestParseOPF(t *testing.T) {
     <language>rus</language>
     <creator xmlns:opf="http://www.idpf.org/2007/opf" opf:role="aut">Author Name</creator>
     <creator xmlns:opf="http://www.idpf.org/2007/opf" opf:role="nrt">Narrator Name</creator>
+    <subject>Fiction</subject>
+    <subject>   </subject>
     <meta name="calibre:series" content="Test Series"/>
+    <meta name="calibre:series_index" content="4"/>
   </metadata>
 </package>`
 	validPath := filepath.Join(tempDir, "valid.opf")
@@ -114,22 +122,42 @@ func TestParseOPF(t *testing.T) {
 	if info.Series != "Test Series" {
 		t.Errorf("expected series 'Test Series', got '%s'", info.Series)
 	}
+	if info.SeriesNumber != "4" {
+		t.Errorf("expected series number '4', got '%s'", info.SeriesNumber)
+	}
 	if info.Language != "rus" {
 		t.Errorf("expected language 'rus', got '%s'", info.Language)
 	}
-
-	_, err = ParseOPF(filepath.Join(tempDir, "missing.opf"))
-	if err == nil {
-		t.Errorf("expected error for missing file")
+	if len(info.Genres) != 1 || info.Genres[0] != "Fiction" {
+		t.Errorf("expected genres ['Fiction'], got %v", info.Genres)
 	}
+}
 
-	invalidPath := filepath.Join(tempDir, "invalid.opf")
-	if writeErr := os.WriteFile(invalidPath, []byte("<broken>"), 0o600); writeErr != nil {
-		t.Fatalf("write invalid opf: %v", writeErr)
+func TestParseOPF_AlternativeSeriesAndFallback(t *testing.T) {
+	tempDir := t.TempDir()
+
+	altSeriesOPF := `<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://www.idpf.org/2007/opf">
+  <metadata>
+    <meta name="series" content="Alt Series"/>
+    <meta name="series_index" content="5"/>
+    <meta property="belongs-to-collection">Collection Series</meta>
+    <meta property="group-position">7</meta>
+  </metadata>
+</package>`
+	altPath := filepath.Join(tempDir, "alt_series.opf")
+	if writeErr := os.WriteFile(altPath, []byte(altSeriesOPF), 0o600); writeErr != nil {
+		t.Fatalf("write alt series opf: %v", writeErr)
 	}
-	_, err = ParseOPF(invalidPath)
-	if err == nil {
-		t.Errorf("expected error for invalid xml")
+	infoAlt, err := ParseOPF(altPath)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if infoAlt.Series != "Collection Series" {
+		t.Errorf("expected series 'Collection Series', got '%s'", infoAlt.Series)
+	}
+	if infoAlt.SeriesNumber != "7" {
+		t.Errorf("expected series number '7', got '%s'", infoAlt.SeriesNumber)
 	}
 
 	fallbackOPF := `<?xml version="1.0" encoding="utf-8"?>
@@ -148,6 +176,24 @@ func TestParseOPF(t *testing.T) {
 	}
 	if infoFallback.Author != "Fallback Author" {
 		t.Errorf("expected fallback author 'Fallback Author', got '%s'", infoFallback.Author)
+	}
+}
+
+func TestParseOPF_Errors(t *testing.T) {
+	tempDir := t.TempDir()
+
+	_, err := ParseOPF(filepath.Join(tempDir, "missing.opf"))
+	if err == nil {
+		t.Errorf("expected error for missing file")
+	}
+
+	invalidPath := filepath.Join(tempDir, "invalid.opf")
+	if writeErr := os.WriteFile(invalidPath, []byte("<broken>"), 0o600); writeErr != nil {
+		t.Fatalf("write invalid opf: %v", writeErr)
+	}
+	_, err = ParseOPF(invalidPath)
+	if err == nil {
+		t.Errorf("expected error for invalid xml")
 	}
 }
 

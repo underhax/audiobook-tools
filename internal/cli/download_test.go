@@ -44,7 +44,29 @@ func TestDefaultDownloader(t *testing.T) {
 	}
 }
 
+func TestResolveOutputDir(t *testing.T) {
+	origConfigGet := configGetOutputDir
+	defer func() { configGetOutputDir = origConfigGet }()
+
+	if got := resolveOutputDir("my/dir"); got != "my/dir" {
+		t.Errorf("got %q, want %q", got, "my/dir")
+	}
+
+	configGetOutputDir = func() string { return "cfg/dir" }
+	if got := resolveOutputDir(""); got != "cfg/dir" {
+		t.Errorf("got %q, want %q", got, "cfg/dir")
+	}
+
+	configGetOutputDir = func() string { return "" }
+	if got := resolveOutputDir(""); got != "." {
+		t.Errorf("got %q, want %q", got, ".")
+	}
+}
+
 func TestRunDownload(t *testing.T) {
+	origConfigGet := configGetOutputDir
+	defer func() { configGetOutputDir = origConfigGet }()
+
 	tests := []struct {
 		setupMock func()
 		name      string
@@ -68,7 +90,7 @@ func TestRunDownload(t *testing.T) {
 		{
 			name:    "no url flag",
 			wantErr: true,
-			errStr:  "-url flag is required",
+			errStr:  "--url flag is required",
 		},
 		{
 			name:    "download failed",
@@ -110,6 +132,30 @@ func TestRunDownload(t *testing.T) {
 			name:    "download success no m4b",
 			urlVal:  "http://deti-online.com/book_2",
 			wantErr: false,
+			setupMock: func() {
+				newDownloader = func(_, _ int) bookDownloader {
+					return &mockBookDownloader{err: nil}
+				}
+			},
+		},
+		{
+			name:    "download success with configured out dir",
+			urlVal:  "http://deti-online.com/book_configured_out",
+			wantErr: false,
+			setupMock: func() {
+				configGetOutputDir = func() string {
+					return "/configured/audiobooks"
+				}
+				newDownloader = func(_, _ int) bookDownloader {
+					return &mockBookDownloader{err: nil}
+				}
+			},
+		},
+		{
+			name:      "download success with explicit out flag",
+			urlVal:    "http://deti-online.com/book_explicit_out",
+			extraArgs: []string{"-out", "/explicit/dir"},
+			wantErr:   false,
 			setupMock: func() {
 				newDownloader = func(_, _ int) bookDownloader {
 					return &mockBookDownloader{err: nil}
@@ -558,4 +604,12 @@ func TestExecuteBuilderBadWriter(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestDefaultConfigGetOutputDir(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("AppData", t.TempDir())
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+
+	_ = defaultConfigGetOutputDir()
 }

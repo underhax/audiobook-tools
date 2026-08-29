@@ -9,22 +9,40 @@ import (
 	"strings"
 	"time"
 
+	"github.com/underhax/audiobook-tools/internal/config"
 	"github.com/underhax/audiobook-tools/internal/core"
 	"github.com/underhax/audiobook-tools/pkg/utils"
 )
+
+func defaultConfigGetOutputDir() string {
+	return config.GetOutputDir()
+}
+
+var configGetOutputDir = defaultConfigGetOutputDir
+
+func resolveOutputDir(flagDir string) string {
+	if flagDir != "" {
+		return flagDir
+	}
+	if configured := configGetOutputDir(); configured != "" {
+		return configured
+	}
+	return "."
+}
 
 // RunDownload parses flags and executes the downloader workflow.
 func RunDownload(args []string, out io.Writer) error {
 	fs := flag.NewFlagSet("download", flag.ContinueOnError)
 	fs.SetOutput(out)
+	setupUsage(fs, "download")
 
 	url := fs.String("url", "", "URL of the audiobook to download")
-	outDir := fs.String("out", ".", "Output directory for the downloaded files")
+	outDir := fs.String("out", "", "Output directory for the downloaded files")
 	workers := fs.Int("workers", 5, "Number of concurrent download workers")
 	loadCover := fs.Bool("cover", true, "Download cover image")
 	createMetadata := fs.Bool("metadata", true, "Create OPF metadata file")
 	m4bFlag := fs.Bool("m4b", false, "Build M4B file after downloading")
-	cleanFiles := fs.Bool("clean", false, "Clean up downloaded MP3 files after building M4B (only if -m4b is set)")
+	cleanFiles := fs.Bool("clean", false, "Clean up downloaded MP3 files after building M4B (only if --m4b is set)")
 	debug := fs.Bool("debug", false, "Show ffmpeg output and warnings")
 	detiVersion := fs.Int("deti-online-voice-version", 1, "Voice version to download (deti-online.com only)")
 	retries := fs.Int("retry", 3, "Maximum number of network retries")
@@ -37,7 +55,7 @@ func RunDownload(args []string, out io.Writer) error {
 	}
 
 	if *url == "" {
-		return errors.New("-url flag is required")
+		return errors.New("--url flag is required")
 	}
 
 	if *debug {
@@ -47,6 +65,7 @@ func RunDownload(args []string, out io.Writer) error {
 	}
 
 	d := newDownloader(*workers, *retries)
+	targetOutDir := resolveOutputDir(*outDir)
 
 	var (
 		info      *core.BookInfo
@@ -56,7 +75,7 @@ func RunDownload(args []string, out io.Writer) error {
 	)
 
 	for {
-		info, chapters, targetDir, err = d.DownloadBook(context.Background(), *url, *outDir, *loadCover, *createMetadata, *detiVersion)
+		info, chapters, targetDir, err = d.DownloadBook(context.Background(), *url, targetOutDir, *loadCover, *createMetadata, *detiVersion)
 		if err != nil {
 			if strings.Contains(err.Error(), "wait for chapters:") && len(unfinishedDownloads(targetDir)) > 0 {
 				if askRetry(osStdin, out) {

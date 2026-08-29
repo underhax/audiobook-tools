@@ -140,6 +140,17 @@ func TestRun(t *testing.T) {
 			wantError:    true,
 		},
 		{
+			name:         "config command help",
+			args:         []string{"config", "-h"},
+			wantExitCode: 0,
+		},
+		{
+			name:         "config command error",
+			args:         []string{"config", "-invalid-flag"},
+			wantExitCode: 1,
+			wantError:    true,
+		},
+		{
 			name:         "update command help",
 			args:         []string{"update", "-h"},
 			wantExitCode: 0,

@@ -16,6 +16,7 @@ type BookInfo struct {
 	URL            string   `json:"url"`
 	Language       string   `json:"language,omitempty"`
 	Series         string   `json:"series,omitempty"`
+	SeriesNumber   string   `json:"seriesNumber,omitempty"`
 	Authors        []string `json:"authors"`
 	Genres         []string `json:"genres"`
 	Translators    []string `json:"translators,omitempty"`

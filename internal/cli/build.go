@@ -18,6 +18,7 @@ import (
 func RunBuild(args []string, out io.Writer) error {
 	fs := flag.NewFlagSet("build", flag.ContinueOnError)
 	fs.SetOutput(out)
+	setupUsage(fs, "build")
 
 	dir := fs.String("dir", "", "Path to the directory containing the audiobook files")
 	cleanFiles := fs.Bool("clean", false, "Clean up downloaded MP3 files after building M4B")
@@ -31,7 +32,7 @@ func RunBuild(args []string, out io.Writer) error {
 	}
 
 	if *dir == "" {
-		return errors.New("-dir flag is required")
+		return errors.New("--dir flag is required")
 	}
 
 	absPath, absErr := filepathAbs(*dir)
@@ -124,6 +125,9 @@ func getMetadataFromID3(dir string) *core.BookInfo {
 	}
 	author := m4b.ExtractID3Text(firstFile, "TPE1")
 	narrator := m4b.ExtractID3Text(firstFile, "TPE2")
+	genre := m4b.ExtractID3Text(firstFile, "TCON")
+	series := m4b.ExtractID3Text(firstFile, "TIT1")
+	language := m4b.ExtractID3Text(firstFile, "TLAN")
 
 	if title != "" || author != "" {
 		if title == "" {
@@ -132,11 +136,17 @@ func getMetadataFromID3(dir string) *core.BookInfo {
 		if author == "" {
 			author = unknownAuthor
 		}
-		return &core.BookInfo{
+		info := &core.BookInfo{
 			Title:    title,
 			Author:   author,
 			Narrator: narrator,
+			Series:   series,
+			Language: language,
 		}
+		if genre != "" {
+			info.Genres = []string{genre}
+		}
+		return info
 	}
 	return nil
 }

@@ -19,7 +19,7 @@ Downloading audiobooks manually and organizing dozens of individual MP3 files is
 ## Requirements
 
 - **Downloading:** No external dependencies are required.
-- **Building:** To use the `build` feature (or the `-m4b` flag during download), **FFmpeg** and **FFprobe** must be installed and available in your system's `PATH`. Without them, audio conversion and `.m4b` assembly will not work. You can download them from the [official FFmpeg website](https://ffmpeg.org/download.html).
+- **Building:** To use the `build` feature (or the `--m4b` flag during download), **FFmpeg** and **FFprobe** must be installed and available in your system's `PATH`. Without them, audio conversion and `.m4b` assembly will not work. You can download them from the [official FFmpeg website](https://ffmpeg.org/download.html).
 
 ## Installation
 
@@ -40,36 +40,36 @@ Official releases are available on the [GitHub Releases page](https://github.com
 Downloads the audiobook files to your local drive.
 
 ```bash
-/path/to/audiobook-tools download -url "<AUDIOBOOK_URL>" [OPTIONS]
+/path/to/audiobook-tools download --url "<AUDIOBOOK_URL>" [OPTIONS]
 ```
 
 **Options:**
-- `-url <string>`: **(Required)** URL of the audiobook to download.
-- `-out <string>`: Output directory for the downloaded files (default ".").
-- `-workers <int>`: Number of concurrent download workers (default 5).
-- `-retry <int>`: Maximum number of network retries for HTTP requests and file downloads (default 3).
-- `-m4b`: Build M4B file after downloading.
-- `-clean`: Clean up downloaded MP3 files after building M4B (only if `-m4b` is set).
-- `-cover`: Download cover image (default true).
-- `-metadata`: Create OPF metadata file (default true).
-- `-deti-online-voice-version <int>`: Voice version to download (deti-online.com only) (default 1).
-- `-debug`: Show ffmpeg output and warnings.
+- `--url <string>`: **(Required)** URL of the audiobook to download.
+- `--out <string>`: Output directory for the downloaded files (defaults to configured directory or ".").
+- `--workers <int>`: Number of concurrent download workers (default 5).
+- `--retry <int>`: Maximum number of network retries for HTTP requests and file downloads (default 3).
+- `--m4b`: Build M4B file after downloading.
+- `--clean`: Clean up downloaded MP3 files after building M4B (only if `--m4b` is set).
+- `--cover`: Download cover image (default true).
+- `--metadata`: Create OPF metadata file (default true).
+- `--deti-online-voice-version <int>`: Voice version to download (deti-online.com only) (default 1).
+- `--debug`: Show ffmpeg output and warnings.
 
 If the configured retry count is exhausted and some chapter downloads remain unfinished, the tool will keep the partial `.tmp` files and ask whether you want to retry downloading the missing files.
 
 **Example (Download Only):**
 ```bash
-/path/to/audiobook-tools download -url "<AUDIOBOOK_URL>" -out "~/Downloads"
+/path/to/audiobook-tools download --url "<AUDIOBOOK_URL>" --out "/path/to/save/audiobook/directory"
 ```
 
 **Example (Download with Increased Retry Count):**
 ```bash
-/path/to/audiobook-tools download -url "<AUDIOBOOK_URL>" -out "~/Downloads" -retry 5
+/path/to/audiobook-tools download --url "<AUDIOBOOK_URL>" --out "/path/to/save/audiobook/directory" --retry 5
 ```
 
 **Example (Download, Build M4B, and Clean up MP3s):**
 ```bash
-/path/to/audiobook-tools download -url "<AUDIOBOOK_URL>" -out "~/Downloads" -m4b -clean
+/path/to/audiobook-tools download --url "<AUDIOBOOK_URL>" --out "/path/to/save/audiobook/directory" --m4b --clean
 ```
 
 ### 2. Build an M4B File
@@ -77,17 +77,17 @@ If the configured retry count is exhausted and some chapter downloads remain unf
 If you already have a directory containing audiobook `.mp3` files, you can assemble them into an `.m4b` container. The tool will use the `metadata.opf` and `cover.jpg` inside the directory if they are present.
 
 ```bash
-/path/to/audiobook-tools build -dir "/path/to/audiobook/directory" [OPTIONS]
+/path/to/audiobook-tools build --dir "/path/to/audiobook/directory" [OPTIONS]
 ```
 
 **Options:**
-- `-dir <string>`: **(Required)** Path to the directory containing the audiobook files.
-- `-clean`: Clean up downloaded MP3 files after building M4B.
-- `-debug`: Show ffmpeg output and warnings.
+- `--dir <string>`: **(Required)** Path to the directory containing the audiobook files.
+- `--clean`: Clean up downloaded MP3 files after building M4B.
+- `--debug`: Show ffmpeg output and warnings.
 
 **Example:**
 ```bash
-/path/to/audiobook-tools build -dir "~/Downloads/Author Name/Book Title" -clean
+/path/to/audiobook-tools build --dir "/path/to/Author Name/Book Title" --clean
 ```
 
 ### 3. Authentication (for some platforms)
@@ -107,5 +107,44 @@ Some platforms, such as Яндекс Книги, require authentication to acces
 
 Alternatively, you can provide the token via an environment variable directly when downloading:
 ```bash
-BOOKS_YANDEX_TOKEN=my_secret_token_here /path/to/audiobook-tools download -url "<AUDIOBOOK_URL>"
+BOOKS_YANDEX_TOKEN=my_secret_token_here /path/to/audiobook-tools download --url "<AUDIOBOOK_URL>"
+```
+
+### 4. Configuration
+
+You can set a default output directory so you don't need to specify `--out` on every download command. The configuration is stored in your system's standard user configuration directory.
+
+```bash
+/path/to/audiobook-tools config [OPTIONS]
+```
+
+**Options:**
+- `--out <string>`: Set or overwrite the default output directory for downloaded audiobooks.
+- `--clear-out`: Clear the configured default output directory.
+
+**View current configuration:**
+```bash
+/path/to/audiobook-tools config
+```
+
+**Set default output directory:**
+```bash
+/path/to/audiobook-tools config --out "/path/to/save/audiobook/directory"
+```
+
+**Clear default output directory:**
+```bash
+/path/to/audiobook-tools config --clear-out
+```
+
+### 5. Self-Update
+
+The `update` command checks for the latest release on GitHub and automatically replaces the current binary in place:
+- Compares the installed version against the latest GitHub release tag.
+- Downloads the appropriate archive for your operating system and architecture.
+- Verifies the SHA-256 checksum of the downloaded archive.
+- Performs an atomic binary replacement (on Windows, the previous executable is renamed to `.old` and cleaned up automatically on the next launch).
+
+```bash
+/path/to/audiobook-tools update
 ```

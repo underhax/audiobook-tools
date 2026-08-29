@@ -57,7 +57,7 @@ func TestRunBuild(t *testing.T) {
 		{
 			name:    "no dir flag",
 			wantErr: true,
-			errStr:  "-dir flag is required",
+			errStr:  "--dir flag is required",
 		},
 		{
 			name:      "success ID3 metadata",
@@ -303,13 +303,21 @@ func setupBuildTestDirs(t *testing.T, tempDir string) buildTestDirs {
 	tit2Data := append([]byte{3}, []byte("Test Title")...)
 	tpe1Header := []byte{'T', 'P', 'E', '1', 0, 0, 0, 12, 0, 0}
 	tpe1Data := append([]byte{3}, []byte("Test Author")...)
+	tconHeader := []byte{'T', 'C', 'O', 'N', 0, 0, 0, 7, 0, 0}
+	tconData := append([]byte{3}, []byte("Comedy")...)
+	tlanHeader := []byte{'T', 'L', 'A', 'N', 0, 0, 0, 4, 0, 0}
+	tlanData := append([]byte{3}, []byte("rus")...)
 
-	mp3Data := make([]byte, 0, len(id3Header)+len(tit2Header)+len(tit2Data)+len(tpe1Header)+len(tpe1Data))
+	mp3Data := make([]byte, 0, len(id3Header)+len(tit2Header)+len(tit2Data)+len(tpe1Header)+len(tpe1Data)+len(tconHeader)+len(tconData)+len(tlanHeader)+len(tlanData))
 	mp3Data = append(mp3Data, id3Header...)
 	mp3Data = append(mp3Data, tit2Header...)
 	mp3Data = append(mp3Data, tit2Data...)
 	mp3Data = append(mp3Data, tpe1Header...)
 	mp3Data = append(mp3Data, tpe1Data...)
+	mp3Data = append(mp3Data, tconHeader...)
+	mp3Data = append(mp3Data, tconData...)
+	mp3Data = append(mp3Data, tlanHeader...)
+	mp3Data = append(mp3Data, tlanData...)
 
 	if err := os.WriteFile(mp3Path, mp3Data, 0o600); err != nil {
 		t.Fatalf("failed to write mp3: %v", err)

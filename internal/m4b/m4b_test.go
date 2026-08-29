@@ -386,11 +386,13 @@ func TestRunFFmpeg_SuccessAndMetadata(t *testing.T) {
 	t.Setenv("PATH", tempDir+string(os.PathListSeparator)+oldPath)
 
 	info := &core.BookInfo{
-		Title:       "Meta Book",
-		Publisher:   "MyPub",
-		Language:    "eng",
-		Series:      "MySeries",
-		Description: "Desc",
+		Title:        "Meta Book",
+		Publisher:    "MyPub",
+		Language:     "eng",
+		Series:       "MySeries",
+		SeriesNumber: "4",
+		Description:  "Desc",
+		Genres:       []string{"Fantasy", "Adventure"},
 	}
 
 	_, err = runFFmpeg(context.Background(), info, tempDir, "concat.txt", "meta.txt", false)
@@ -401,6 +403,25 @@ func TestRunFFmpeg_SuccessAndMetadata(t *testing.T) {
 	_, err = runFFmpeg(context.Background(), info, tempDir, "concat.txt", "meta.txt", true)
 	if err != nil {
 		t.Errorf("expected success, got: %v", err)
+	}
+}
+
+func TestNormalizeLanguage(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{input: "en", want: "eng"},
+		{input: "RU", want: "rus"},
+		{input: "es", want: "spa"},
+		{input: "uk", want: "ukr"},
+		{input: "deu", want: "deu"},
+		{input: "", want: ""},
+	}
+	for _, tt := range tests {
+		if got := normalizeLanguage(tt.input); got != tt.want {
+			t.Errorf("normalizeLanguage(%q) = %q, want %q", tt.input, got, tt.want)
+		}
 	}
 }
 

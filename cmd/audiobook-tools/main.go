@@ -40,6 +40,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		err = cli.RunDownload(cmdArgs, stdout)
 	case "auth":
 		err = cli.RunAuth(cmdArgs, stdout)
+	case "config":
+		err = cli.RunConfig(cmdArgs, stdout)
 	case "build":
 		err = cli.RunBuild(cmdArgs, stdout)
 	case "update":
@@ -78,6 +80,7 @@ Usage:
 
 The commands are:
   auth        Save authentication token for a specific provider (e.g. books_yandex)
+  config      View or modify application configuration
   download    Download an audiobook from a supported site
   build       Build an M4B file from an existing directory of MP3s
   update      Update audiobook-tools to the latest version
