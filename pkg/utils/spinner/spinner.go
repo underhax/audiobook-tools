@@ -101,6 +101,11 @@ func (s *Spinner) printFrame(start time.Time, i int) {
 		c = s.completed.Load()
 	}
 	elapsed := s.timeSource().Sub(start).Round(time.Second)
-	_, err := fmt.Fprintf(s.out, "\r\033[K%s %s [%d/%d] (Elapsed: %s)", s.frames[i%len(s.frames)], s.label, c, s.total, elapsed)
-	_ = err
+	if s.total <= 0 {
+		_, err := fmt.Fprintf(s.out, "\r\033[K%s %s (Elapsed: %s)", s.frames[i%len(s.frames)], s.label, elapsed)
+		_ = err
+	} else {
+		_, err := fmt.Fprintf(s.out, "\r\033[K%s %s [%d/%d] (Elapsed: %s)", s.frames[i%len(s.frames)], s.label, c, s.total, elapsed)
+		_ = err
+	}
 }

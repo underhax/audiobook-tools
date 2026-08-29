@@ -7,15 +7,25 @@ import (
 	"os"
 
 	"github.com/underhax/audiobook-tools/internal/cli"
+	"github.com/underhax/audiobook-tools/internal/updater"
 )
 
-var osExit = os.Exit
+func defaultCleanupWindowsOldFiles() {
+	updater.CleanupWindowsOldFiles()
+}
+
+var (
+	osExit                 = os.Exit
+	cleanupWindowsOldFiles = defaultCleanupWindowsOldFiles
+)
 
 func main() {
 	osExit(run(os.Args, os.Stdout, os.Stderr))
 }
 
 func run(args []string, stdout, stderr io.Writer) int {
+	cleanupWindowsOldFiles()
+
 	if len(args) < 2 {
 		printUsage(stdout)
 		return 1
@@ -32,6 +42,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		err = cli.RunAuth(cmdArgs, stdout)
 	case "build":
 		err = cli.RunBuild(cmdArgs, stdout)
+	case "update":
+		err = cli.RunUpdate(cmdArgs, stdout)
 	case "help", "-h", "--help":
 		printUsage(stdout)
 		return 0
@@ -68,6 +80,7 @@ The commands are:
   auth        Save authentication token for a specific provider (e.g. books_yandex)
   download    Download an audiobook from a supported site
   build       Build an M4B file from an existing directory of MP3s
+  update      Update audiobook-tools to the latest version
   version     Print the version number
 
 Use "audiobook-tools <command> -h" for more information about a command.`); err != nil {

@@ -139,10 +139,25 @@ func TestRun(t *testing.T) {
 			wantExitCode: 1,
 			wantError:    true,
 		},
+		{
+			name:         "update command help",
+			args:         []string{"update", "-h"},
+			wantExitCode: 0,
+		},
+		{
+			name:         "update command error",
+			args:         []string{"update", "-unknown-flag"},
+			wantExitCode: 1,
+			wantError:    true,
+		},
 	}
 
 	for i := range tests {
 		t.Run(tests[i].name, tests[i].runTest)
 		t.Run(tests[i].name+"_badwriter", tests[i].runBadWriterTest)
 	}
+}
+
+func TestDefaultCleanupWindowsOldFiles(_ *testing.T) {
+	defaultCleanupWindowsOldFiles()
 }

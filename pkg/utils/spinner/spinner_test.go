@@ -69,3 +69,21 @@ func TestSpinner_ContextCancel(t *testing.T) {
 		t.Errorf("expected output even on context cancel, got %q", output)
 	}
 }
+
+func TestSpinner_NoTotal(t *testing.T) {
+	var buf bytes.Buffer
+	ctx := t.Context()
+
+	stop := Start(ctx, "NoTotal...", nil, 0,
+		WithWriter(&buf),
+		WithInterval(5*time.Millisecond),
+	)
+
+	time.Sleep(15 * time.Millisecond)
+	stop()
+
+	output := buf.String()
+	if !strings.Contains(output, "NoTotal... (Elapsed: 0s)") {
+		t.Errorf("expected output to omit fraction when total <= 0, got %q", output)
+	}
+}
