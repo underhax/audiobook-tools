@@ -1,6 +1,6 @@
 module github.com/underhax/audiobook-tools
 
-go 1.27.2
+go 1.27.3
 
 require (
 	golang.org/x/net v0.61.0
