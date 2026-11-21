@@ -16,7 +16,7 @@ import (
 	"github.com/underhax/audiobook-tools/internal/core"
 	"github.com/underhax/audiobook-tools/pkg/utils"
 	"github.com/underhax/audiobook-tools/pkg/utils/spinner"
-	"golang.org/x/sync/errgroup"
+	"github.com/underhax/audiobook-tools/pkg/utils/taskgroup"
 )
 
 // CheckDependencies verifies that ffmpeg and ffprobe are available in the system PATH.
@@ -357,8 +357,7 @@ func processSingleAudioFile(ctx context.Context, targetDir, file string) error {
 func convertAllToM4A(ctx context.Context, targetDir string, sourceFiles []string) error {
 	totalFiles := len(sourceFiles)
 	var completed atomic.Int32
-	g, gCtx := errgroup.WithContext(ctx)
-	g.SetLimit(runtime.NumCPU())
+	g, gCtx := taskgroup.WithContext(ctx, runtime.NumCPU())
 
 	stopSpinner := spinner.Start(ctx, "Converting...", &completed, totalFiles)
 
@@ -376,7 +375,7 @@ func convertAllToM4A(ctx context.Context, targetDir string, sourceFiles []string
 	stopSpinner()
 
 	if err != nil {
-		return fmt.Errorf("errgroup wait: %w", err)
+		return fmt.Errorf("taskgroup wait: %w", err)
 	}
 	return nil
 }

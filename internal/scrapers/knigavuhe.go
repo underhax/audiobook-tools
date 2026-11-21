@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"github.com/underhax/audiobook-tools/internal/core"
-	"golang.org/x/net/html"
 )
 
 const (
@@ -32,7 +31,7 @@ func (s *Knigavuhe) SetClient(client *http.Client) {
 
 // GetBookInfo translates the raw HTML response into structured domain models for downstream processing.
 func (s *Knigavuhe) GetBookInfo(_ context.Context, htmlContent, bookURL string) (core.BookInfo, []core.Chapter, error) {
-	doc, err := html.Parse(stringsNewReader(htmlContent))
+	doc, err := parseHTML(stringsNewReader(htmlContent))
 	if err != nil {
 		return core.BookInfo{}, nil, fmt.Errorf("failed to parse HTML: %w", err)
 	}
@@ -56,17 +55,17 @@ func (s *Knigavuhe) GetBookInfo(_ context.Context, htmlContent, bookURL string) 
 	return info, files, nil
 }
 
-func extractNodes(n *html.Node, info *core.BookInfo) {
-	if n.Type == html.ElementNode {
+func extractNodes(n *node, info *core.BookInfo) {
+	if n.nodeType == elementNode {
 		processElementNode(n, info)
 	}
-	for c := n.FirstChild; c != nil; c = c.NextSibling {
+	for c := n.firstChild; c != nil; c = c.nextSibling {
 		extractNodes(c, info)
 	}
 }
 
-func processElementNode(n *html.Node, info *core.BookInfo) {
-	switch n.Data {
+func processElementNode(n *node, info *core.BookInfo) {
+	switch n.data {
 	case tagSpan:
 		processSpan(n, info)
 	case tagDiv:
@@ -74,7 +73,7 @@ func processElementNode(n *html.Node, info *core.BookInfo) {
 	}
 }
 
-func processSpan(n *html.Node, info *core.BookInfo) {
+func processSpan(n *node, info *core.BookInfo) {
 	switch getAttribute(n, "itemprop") {
 	case "name":
 		if title := getText(n); title != "" && info.Title == "" {
@@ -99,15 +98,15 @@ func processSpan(n *html.Node, info *core.BookInfo) {
 	}
 }
 
-func processDiv(n *html.Node, info *core.BookInfo) {
+func processDiv(n *node, info *core.BookInfo) {
 	switch getAttribute(n, "class") {
 	case "book_description":
 		if desc := getText(n); desc != "" && info.Description == "" {
 			info.Description = desc
 		}
 	case "book_cover":
-		for c := n.FirstChild; c != nil; c = c.NextSibling {
-			if c.Type == html.ElementNode && c.Data == "img" {
+		for c := n.firstChild; c != nil; c = c.nextSibling {
+			if c.nodeType == elementNode && c.data == tagImg {
 				if src := getAttribute(c, "src"); src != "" {
 					info.Cover = src
 					break
@@ -123,23 +122,23 @@ func processDiv(n *html.Node, info *core.BookInfo) {
 	}
 }
 
-func getAttribute(n *html.Node, key string) string {
-	for _, a := range n.Attr {
-		if a.Key == key {
-			return a.Val
+func getAttribute(n *node, key string) string {
+	for _, a := range n.attr {
+		if a.key == key {
+			return a.val
 		}
 	}
 	return ""
 }
 
-func getText(n *html.Node) string {
+func getText(n *node) string {
 	var buf strings.Builder
-	var f func(*html.Node)
-	f = func(n *html.Node) {
-		if n.Type == html.TextNode {
-			buf.WriteString(n.Data)
+	var f func(*node)
+	f = func(n *node) {
+		if n.nodeType == textNode {
+			buf.WriteString(n.data)
 		}
-		for c := n.FirstChild; c != nil; c = c.NextSibling {
+		for c := n.firstChild; c != nil; c = c.nextSibling {
 			f(c)
 		}
 	}

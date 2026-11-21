@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"github.com/underhax/audiobook-tools/internal/core"
-	"golang.org/x/net/html"
 )
 
 // DetiOnline isolates the HTML parsing logic for deti-online.com
@@ -35,7 +34,7 @@ func (s *DetiOnline) SetClient(client *http.Client) {
 
 // GetBookInfo translates the raw HTML response into structured domain models.
 func (s *DetiOnline) GetBookInfo(ctx context.Context, htmlContent, bookURL string) (core.BookInfo, []core.Chapter, error) {
-	doc, err := html.Parse(stringsNewReader(htmlContent))
+	doc, err := parseHTML(stringsNewReader(htmlContent))
 	if err != nil {
 		return core.BookInfo{}, nil, fmt.Errorf("failed to parse HTML: %w", err)
 	}
@@ -55,15 +54,7 @@ func (s *DetiOnline) GetBookInfo(ctx context.Context, htmlContent, bookURL strin
 	}
 
 	if info.Title != "" {
-		prefixes := []string{"Аудиосказка «", "Аудиокнига «", "Аудиосказка ", "Аудиокнига "}
-		for _, prefix := range prefixes {
-			if trimmed, found := strings.CutPrefix(info.Title, prefix); found {
-				info.Title = trimmed
-				break
-			}
-		}
-		info.Title = strings.TrimSuffix(info.Title, "»")
-		info.Title = strings.TrimSpace(info.Title)
+		info.Title = cleanDetiTitle(info.Title)
 	}
 
 	serverDomain := s.getServerDomain(ctx, playerJSURL)
@@ -73,6 +64,45 @@ func (s *DetiOnline) GetBookInfo(ctx context.Context, htmlContent, bookURL strin
 	}
 
 	return info, chapters, nil
+}
+
+func cleanDetiTitle(title string) string {
+	prefixes := []string{
+		"Аудио рассказы «", "Аудио рассказы ",
+		"Аудио рассказ «", "Аудио рассказ ",
+		"Аудиорассказы «", "Аудиорассказы ",
+		"Аудиорассказ «", "Аудиорассказ ",
+		"Аудиосказка «", "Аудиосказка ",
+		"Аудиосказки «", "Аудиосказки ",
+		"Аудиокнига «", "Аудиокнига ",
+		"Аудиокниги «", "Аудиокниги ",
+		"Сказка «", "Сказка ",
+		"Сказки «", "Сказки ",
+		"Рассказ «", "Рассказ ",
+		"Рассказы «", "Рассказы ",
+	}
+
+	trimmed := title
+	removedOpenQuote := false
+	for _, prefix := range prefixes {
+		if after, found := strings.CutPrefix(trimmed, prefix); found {
+			trimmed = after
+			if strings.HasSuffix(prefix, "«") {
+				removedOpenQuote = true
+			}
+			break
+		}
+	}
+
+	switch {
+	case strings.HasPrefix(trimmed, "«") && strings.HasSuffix(trimmed, "»"):
+		trimmed = strings.TrimPrefix(trimmed, "«")
+		trimmed = strings.TrimSuffix(trimmed, "»")
+	case removedOpenQuote:
+		trimmed = strings.TrimSuffix(trimmed, "»")
+	}
+
+	return strings.TrimSpace(trimmed)
 }
 
 func (s *DetiOnline) getServerDomain(ctx context.Context, playerJSURL string) string {
@@ -109,9 +139,9 @@ func (s *DetiOnline) getServerDomain(ctx context.Context, playerJSURL string) st
 	return fallback
 }
 
-func extractDetiNodes(n *html.Node, info *core.BookInfo, chapters *[]core.Chapter, playerJSURL *string, version int) {
-	if n.Type == html.ElementNode {
-		if n.Data == "li" {
+func extractDetiNodes(n *node, info *core.BookInfo, chapters *[]core.Chapter, playerJSURL *string, version int) {
+	if n.nodeType == elementNode {
+		if n.data == "li" {
 			class := getAttribute(n, "class")
 			if strings.Contains(class, "group") && !isCorrectVersion(class, version) {
 				return
@@ -119,7 +149,7 @@ func extractDetiNodes(n *html.Node, info *core.BookInfo, chapters *[]core.Chapte
 		}
 		processDetiElement(n, info, chapters, playerJSURL)
 	}
-	for c := n.FirstChild; c != nil; c = c.NextSibling {
+	for c := n.firstChild; c != nil; c = c.nextSibling {
 		extractDetiNodes(c, info, chapters, playerJSURL, version)
 	}
 }
@@ -143,8 +173,8 @@ func isCorrectVersion(class string, version int) bool {
 	return version <= 1
 }
 
-func processDetiElement(n *html.Node, info *core.BookInfo, chapters *[]core.Chapter, playerJSURL *string) {
-	switch n.Data {
+func processDetiElement(n *node, info *core.BookInfo, chapters *[]core.Chapter, playerJSURL *string) {
+	switch n.data {
 	case "script":
 		src := getAttribute(n, "src")
 		if strings.Contains(src, "audio-player") {
@@ -158,8 +188,8 @@ func processDetiElement(n *html.Node, info *core.BookInfo, chapters *[]core.Chap
 		processDetiDiv(n, info)
 	case "picture":
 		if getAttribute(n, "id") == "main-img" {
-			for c := n.FirstChild; c != nil; c = c.NextSibling {
-				if c.Type == html.ElementNode && c.Data == "img" {
+			for c := n.firstChild; c != nil; c = c.nextSibling {
+				if c.nodeType == elementNode && c.data == tagImg {
 					if src := getAttribute(c, "src"); src != "" {
 						info.Cover = "https://deti-online.com" + src
 					}
@@ -171,7 +201,7 @@ func processDetiElement(n *html.Node, info *core.BookInfo, chapters *[]core.Chap
 	}
 }
 
-func processDetiDiv(n *html.Node, info *core.BookInfo) {
+func processDetiDiv(n *node, info *core.BookInfo) {
 	class := getAttribute(n, "class")
 	if class == "hint" && strings.HasPrefix(getText(n), "Автор:") {
 		author := strings.TrimSpace(strings.TrimPrefix(getText(n), "Автор:"))
@@ -187,7 +217,7 @@ func processDetiDiv(n *html.Node, info *core.BookInfo) {
 	}
 }
 
-func processDetiLi(n *html.Node, chapters *[]core.Chapter) {
+func processDetiLi(n *node, chapters *[]core.Chapter) {
 	class := getAttribute(n, "class")
 	if !strings.Contains(class, "item") || !strings.Contains(class, "is-ripple") {
 		return
@@ -201,10 +231,10 @@ func processDetiLi(n *html.Node, chapters *[]core.Chapter) {
 	url := decodeDetiURL(dataF)
 	var title string
 
-	for c := n.FirstChild; c != nil; c = c.NextSibling {
-		if c.Type == html.ElementNode && c.Data == "div" && getAttribute(c, "class") == "name" {
-			for gc := c.FirstChild; gc != nil; gc = gc.NextSibling {
-				if gc.Type == html.ElementNode && gc.Data == "span" && getAttribute(gc, "class") == "t" {
+	for c := n.firstChild; c != nil; c = c.nextSibling {
+		if c.nodeType == elementNode && c.data == "div" && getAttribute(c, "class") == "name" {
+			for gc := c.firstChild; gc != nil; gc = gc.nextSibling {
+				if gc.nodeType == elementNode && gc.data == "span" && getAttribute(gc, "class") == "t" {
 					title = getText(gc)
 				}
 			}

@@ -20,7 +20,10 @@ type Scraper interface {
 	SetClient(client *http.Client)
 }
 
-const authorUnknown = "Автор неизвестен"
+const (
+	authorUnknown = "Автор неизвестен"
+	tagImg        = "img"
+)
 
 func defaultStringsNewReader(s string) io.Reader {
 	return strings.NewReader(s)

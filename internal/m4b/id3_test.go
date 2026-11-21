@@ -173,3 +173,33 @@ func TestScoreCyrillicString(t *testing.T) {
 		})
 	}
 }
+
+func TestDecodeByte(t *testing.T) {
+	tests := []struct {
+		table    *[128]rune
+		name     string
+		input    byte
+		expected rune
+	}{
+		{
+			name:     "ascii byte",
+			input:    'Z',
+			table:    &tableWindows1251,
+			expected: 'Z',
+		},
+		{
+			name:     "high byte",
+			input:    0xC0,
+			table:    &tableWindows1251,
+			expected: 0x0410,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := decodeByte(tt.input, tt.table); got != tt.expected {
+				t.Errorf("got %q, want %q", got, tt.expected)
+			}
+		})
+	}
+}

@@ -20,7 +20,7 @@ import (
 	"github.com/underhax/audiobook-tools/pkg/utils"
 	"github.com/underhax/audiobook-tools/pkg/utils/httputil"
 	"github.com/underhax/audiobook-tools/pkg/utils/spinner"
-	"golang.org/x/sync/errgroup"
+	"github.com/underhax/audiobook-tools/pkg/utils/taskgroup"
 )
 
 var generateOPF = core.GenerateOPF
@@ -215,8 +215,7 @@ func (d *Downloader) processExtras(ctx context.Context, info *core.BookInfo, tar
 }
 
 func (d *Downloader) downloadChapters(ctx context.Context, chapters []core.Chapter, targetDir string) error {
-	var eg errgroup.Group
-	eg.SetLimit(d.Workers)
+	g := taskgroup.New(d.Workers)
 	total := len(chapters)
 	var completed atomic.Int32
 
@@ -226,7 +225,7 @@ func (d *Downloader) downloadChapters(ctx context.Context, chapters []core.Chapt
 	stopSpinner := spinner.Start(ctx, "Downloading...", &completed, total)
 
 	for i, chapter := range chapters {
-		eg.Go(func() error {
+		g.Go(func() error {
 			ext := chapter.Extension
 			if ext == "" {
 				ext = ".mp3"
@@ -245,7 +244,7 @@ func (d *Downloader) downloadChapters(ctx context.Context, chapters []core.Chapt
 		})
 	}
 
-	err := eg.Wait()
+	err := g.Wait()
 	stopSpinner()
 
 	if err != nil {

@@ -80,6 +80,63 @@ func TestRot13(t *testing.T) {
 	}
 }
 
+func TestCleanDetiTitle(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "audio stories with quotes",
+			input:    "Аудио рассказы «Вредные советы»",
+			expected: "Вредные советы",
+		},
+		{
+			name:     "audio fairy tale with quotes",
+			input:    "Аудиосказка «Колобок»",
+			expected: "Колобок",
+		},
+		{
+			name:     "audio book with quotes",
+			input:    "Аудиокнига «Приключения Тома Сойера»",
+			expected: "Приключения Тома Сойера",
+		},
+		{
+			name:     "audio stories without quotes",
+			input:    "Аудио рассказы Истории в картинках",
+			expected: "Истории в картинках",
+		},
+		{
+			name:     "only quotes without prefix",
+			input:    "«Волшебное кольцо»",
+			expected: "Волшебное кольцо",
+		},
+		{
+			name:     "unmatched prefix with quotes preserved",
+			input:    "Неизвестный сборник «Сказки на ночь»",
+			expected: "Неизвестный сборник «Сказки на ночь»",
+		},
+		{
+			name:     "quotes inside title without prefix quotes",
+			input:    "Рассказы про «Дениску»",
+			expected: "про «Дениску»",
+		},
+		{
+			name:     "prefix with quote but no closing quote",
+			input:    "Аудиосказка «Без закрывающей",
+			expected: "Без закрывающей",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := cleanDetiTitle(tt.input); got != tt.expected {
+				t.Errorf("cleanDetiTitle(%q) = %q, want %q", tt.input, got, tt.expected)
+			}
+		})
+	}
+}
+
 type detiMockRoundTripper struct {
 	resp *http.Response
 	err  error
